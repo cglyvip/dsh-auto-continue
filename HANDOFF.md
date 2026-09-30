@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-09-30 · 插件版本 v0.2.0 · 已在作者主力机实测生效
+> 最后更新：2026-09-30 · 插件版本 v0.2.1 · 已在作者主力机实测生效
 
 ---
 
@@ -98,7 +98,8 @@ dsh-auto-continue/
 | `agent.session.requestHeader()?.config` | 最近一次请求的 `{provider, model}`。注意：**请求失败时 header 可能不更新**，读到的可能是上一次成功的模型（日志里 plan 行的"from"偶发不准就是这个原因，无害） |
 | `ctx.get("agents")` | ApiSessionAgentController：`get(id)` / `resolveAgent(id)` / `selectForNextRequest(agent, {provider, model, reasoningEffort?})` |
 | `ctx.get("llm").resolveCallConfig({provider, model})` | 校验并解析模型（async）；失败说明模型不在目录里 |
-| `agent.followup({id, role:"user", content:[{type:"text",text}], source:{kind:"plugin", plugin, form:"notice", summary}})` | 注入下一轮 user 消息并唤醒 agent；`agent.steer()` 是注入当前步 |
+| `agent.followup({id, role:"user", content:[{type:"text",text}], source:{kind:"plugin:<包名>", form:"notice", summary}})` | 注入下一轮 user 消息并唤醒 agent；`agent.steer()` 是注入当前步。⚠️ **会话格式 v4 起持久化层拒收 `source.kind === "plugin"`（v3 旧写法，报 "format v4 message requires a producer-owned source kind"，轮次当场 UNKNOWN 失败）**，第三方插件必须用 `kind: "plugin:<包名>"` 且**去掉 plugin 字段**（这是 `@deepseek-ai/dsh-session-format-v3-to-v4` 迁移器对未知插件的官方升级形态）；另外**真人消息的 source.kind 是 `"user"`**，dsh 运行时注入的上下文消息用各自 producer kind（`runtime-context` / `skill-catalog` / `time-context` 等）——插件判断"用户已接手"要正向匹配 `kind === "user"`，不能反向排除 |
+| 持久化准入（dsh-session-persistence-jsonl worker） | 写入前校验每条消息：source 必须是对象、kind 非空且 ≠ `"plugin"`；不合规的行**不会落盘**（会话文件不损坏），但轮次以 UNKNOWN 失败。其他运行时包对 source.kind 没有白名单校验 |
 | `ctx.get("commands").register({name, description, input:{hint}, handler})` | 注册斜杠指令；handler 返回 `{kind:"success", text}` |
 | 插件管理器判定 | `bundleManifest()` 只认 package.json 的 `dsh.bundle.patch`；管理器 install/reconcile 会把**没有**该声明的依赖从 bundles 数组剔除 |
 
@@ -135,6 +136,7 @@ dsh-auto-continue/
 - `plan: switch` 日志里的"from 模型"取自 requestHeader，请求失败时 header 不刷新，可能显示旧模型（无害，可改为读 `slot.lastFailure` 前先比对 payload.provider）。
 - 未实现：waterfall 返回 `{kind:"retry"}` 做插件级重试（dsh-purge 有现成写法可抄）；client.js 设置页（`dsh.bundle` 下还有 `client` 声明可挂 UI，参考 dsh-purge 的 client.js 的 `window.__ModuleLoader__.load` 模式）。
 - ⚠️ dsh 桌面版是 **nightly 强制更新**通道（package.json 里有 dshMandatoryUpdatePolicy），升级后本插件如果失灵，先重新逆向确认第 4 节的 API 签名是否变化。
+- **v0.2.1 的教训（2026-09-30 实测）**：新机器装了更新的 dsh nightly（内置会话格式 v3→v4 迁移），v0.2.0 注入的 `source.kind:"plugin"` 消息被持久化层当场拒收，每轮以 "format v4 message requires a producer-owned source kind"（UNKNOWN）失败——插件自身轮换逻辑完全正常（日志可见 retry 1/3→2/3→3/3→switch），但注入永不落盘，等于空转预算。排查路径：解包 `app.asar` → `dsh-session-format-v3-to-v4` 与 `dsh-session-persistence-jsonl/lib/worker.cjs` 搜 "producer-owned"。会话文件是多帧 zstd（`session.v4.jsonl.zstd`），Node 流式解压只出第一帧，要按 magic `28b52ffd` 切帧逐帧 `zstdDecompressSync`。
 
 ## 8. 工具踩坑记录（Windows + Git Bash）
 

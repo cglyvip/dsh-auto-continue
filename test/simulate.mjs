@@ -1,7 +1,7 @@
 /**
  * dsh-auto-continue 逻辑模拟测试（不依赖 dsh 运行）：
  *   node test/simulate.mjs
- * 用 mock ctx + mock agent 走完整事件流，验证 11 个场景。
+ * 用 mock ctx + mock agent 走完整事件流，验证 12 个场景。
  */
 import { pathToFileURL, fileURLToPath } from "node:url";
 
@@ -76,7 +76,7 @@ async function markFailed(h, model, provider = "fengwind") {
 	const h = makeHarness({ cfg: { continueDelayMs: 30, verbose: true } });
 	await failRound(h, 1);
 	check("首次失败留在原模型重试（不切换）", h.calls.followups.length === 1 && h.calls.selections.length === 0);
-	check("注入了继续消息", h.calls.followups[0]?.content?.[0]?.text === "继续" && h.calls.followups[0].source.kind === "plugin");
+	check("注入了 format v4 合规的继续消息", h.calls.followups[0]?.content?.[0]?.text === "继续" && h.calls.followups[0].source.kind === "plugin:dsh-auto-continue" && h.calls.followups[0].source.plugin === undefined);
 	h.dispose();
 }
 
@@ -210,6 +210,25 @@ async function markFailed(h, model, provider = "fengwind") {
 	await h.fire("agent/status", { agent: h.agent, status: "idle" });
 	await sleep(80);
 	check("max-tokens 续跑且不换模型", h.calls.followups.length === 1 && h.calls.selections.length === 0);
+	h.dispose();
+}
+
+// --- 场景12: 会话流里插件自己注入的 v4 消息不算"真人接手"
+{
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 3 } });
+	await failRound(h, 1); // 失败 → 注入继续（lastContinueSeq = 2）
+	// 下一轮事件流：上一条注入消息已落盘（v4 producer kind），随后同一轮再次失败
+	h.agent.session.snapshotEvents = () => [
+		{ type: "user/message", seq: 1, data: { source: { kind: "user" } } },
+		{ type: "turn/end", seq: 2, data: { turn: 1, reason: { kind: "error", code: "SERVER" } } },
+		{ type: "user/message", seq: 3, data: { source: { kind: "plugin:dsh-auto-continue", form: "notice" } } },
+		{ type: "turn/end", seq: 4, data: { turn: 2, reason: { kind: "error", code: "SERVER" } } },
+	];
+	h.agent.session.requestHeader = () => ({ config: { provider: "fengwind", model: "glm-5.3-flash" } });
+	await h.fire("agent/request-error", { agent: h.agent, provider: "fengwind", failure: { code: "SERVER", message: "503" } });
+	await h.fire("agent/status", { agent: h.agent, status: "idle" });
+	await sleep(80);
+	check("插件自己的消息不触发真人接手守卫", h.calls.followups.length === 2);
 	h.dispose();
 }
 
