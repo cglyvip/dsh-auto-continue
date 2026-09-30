@@ -1,0 +1,18 @@
+{
+  "name": "dsh-auto-continue",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 插件：模型请求失败导致本轮停止时，自动切换兜底模型并注入「继续」，免手动干预。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "auto-continue"
+  ],
+  "license": "MIT"
+}
