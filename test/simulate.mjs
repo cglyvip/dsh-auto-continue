@@ -1,7 +1,7 @@
 /**
  * dsh-auto-continue 逻辑模拟测试（不依赖 dsh 运行）：
  *   node test/simulate.mjs
- * 用 mock ctx + mock agent 走完整事件流，验证 14 个场景。
+ * 用 mock ctx + mock agent 走完整事件流，验证 15 个场景。
  */
 import { pathToFileURL, fileURLToPath } from "node:url";
 
@@ -86,6 +86,7 @@ async function markFailed(h, model, provider = "fengwind") {
 	for (let n = 1; n <= 3; n += 1) await failRound(h, n);
 	check("重试 2 次后切到 deepseek-v4.1-flash", h.calls.selections.length === 1 && h.calls.selections[0].model === "deepseek-v4.1-flash");
 	check("共注入 3 次继续", h.calls.followups.length === 3);
+	check("切换提示写进消息正文", h.calls.followups[2]?.content?.[0]?.text === "继续（已自动切换到 deepseek-v4.1-flash）");
 	h.dispose();
 }
 
@@ -254,6 +255,20 @@ async function markFailed(h, model, provider = "fengwind") {
 	] } });
 	for (let n = 1; n <= 10; n += 1) await failRound(h, n, "cb/qwen-3.8-27b", "api029", "SERVER", "503 gateway down");
 	check("同错熔断后停止续跑", h.calls.followups.length === 8 && h.calls.selections.length === 2);
+	h.dispose();
+}
+
+// --- 场景15: 429 限流 → 退避后重试同一模型，超过次数上限则放弃
+{
+	const h = makeHarness({ cfg: { continueDelayMs: 30, rateLimitBackoffMs: 40, rateLimitMaxRetries: 3, fallbacks: [
+		{ provider: "api029", model: "deepseek-v4.1-flash" },
+		{ provider: "api029", model: "kimi-k3" },
+	] } });
+	for (let n = 1; n <= 5; n += 1) {
+		await failRound(h, n, "cb/qwen-3.8-27b", "api029", "CONTEXT_WINDOW_EXCEEDED", '429: {"message":"Tokens per minute limit exceeded - too many tokens processed."}');
+	}
+	check("429 限流退避重试且不换模型", h.calls.followups.length === 3 && h.calls.selections.length === 0);
+	check("限流重试的消息正文带提示", h.calls.followups[0]?.content?.[0]?.text?.includes("限流") === true);
 	h.dispose();
 }
 
