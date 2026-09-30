@@ -16,9 +16,11 @@
         retriesPerModel: 3
         # 不同模型连续报同一错误达到该次数即熔断本轮（网关级故障时避免空转预算，0 = 不熔断）
         identicalFailuresLimit: 3
-        # 429 限流退避：等配额窗口重置后重试同一模型（毫秒，0 = 按普通失败处理）
-        rateLimitBackoffMs: 60000
-        # 限流退避重试的最大次数，超过即放弃本轮
+        # 失败重试的随机退避区间（毫秒）：实际等待在 [min, max] 均匀随机（默认 1~2 分钟），
+        # 拉开重试间隔避免快速重试烧配额；两者都为 0 时退回 continueDelayMs 的短间隔
+        retryBackoffMinMs: 60000
+        retryBackoffMaxMs: 120000
+        # 429 限流退避重试的最大次数，超过即放弃本轮
         rateLimitMaxRetries: 3
         modelCooldownMs: 600000
         maxTokensContinue: true

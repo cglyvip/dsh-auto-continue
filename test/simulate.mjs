@@ -33,7 +33,8 @@ function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash
 			return undefined;
 		},
 	};
-	const dispose = mod.apply(ctx, cfg);
+	// 测试默认关闭随机长退避（0/0 → 退回 continueDelayMs），需要测退避的场景自行覆盖
+	const dispose = mod.apply(ctx, { retryBackoffMinMs: 0, retryBackoffMaxMs: 0, ...cfg });
 	return {
 		agent, calls, dispose,
 		async fire(event, payload) {
@@ -76,7 +77,7 @@ async function markFailed(h, model, provider = "fengwind") {
 	const h = makeHarness({ cfg: { continueDelayMs: 30, verbose: true } });
 	await failRound(h, 1);
 	check("首次失败留在原模型重试（不切换）", h.calls.followups.length === 1 && h.calls.selections.length === 0);
-	check("注入了 format v4 合规的继续消息", h.calls.followups[0]?.content?.[0]?.text === "继续" && h.calls.followups[0].source.kind === "plugin:dsh-auto-continue" && h.calls.followups[0].source.plugin === undefined);
+	check("注入了 format v4 合规的继续消息", h.calls.followups[0]?.content?.[0]?.text?.startsWith("继续") === true && h.calls.followups[0].source.kind === "plugin:dsh-auto-continue" && h.calls.followups[0].source.plugin === undefined);
 	h.dispose();
 }
 
@@ -86,7 +87,7 @@ async function markFailed(h, model, provider = "fengwind") {
 	for (let n = 1; n <= 3; n += 1) await failRound(h, n);
 	check("重试 2 次后切到 deepseek-v4.1-flash", h.calls.selections.length === 1 && h.calls.selections[0].model === "deepseek-v4.1-flash");
 	check("共注入 3 次继续", h.calls.followups.length === 3);
-	check("切换提示写进消息正文", h.calls.followups[2]?.content?.[0]?.text === "继续（已自动切换到 deepseek-v4.1-flash）");
+	check("切换提示写进消息正文", h.calls.followups[2]?.content?.[0]?.text?.startsWith("继续（已自动切换到 deepseek-v4.1-flash") === true);
 	h.dispose();
 }
 
@@ -258,15 +259,16 @@ async function markFailed(h, model, provider = "fengwind") {
 	h.dispose();
 }
 
-// --- 场景15: 429 限流 → 退避后重试同一模型，超过次数上限则放弃
+// --- 场景15: 429 限流 → 随机退避后重试同一模型，超过次数上限则放弃
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, rateLimitBackoffMs: 40, rateLimitMaxRetries: 3, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retryBackoffMinMs: 40, retryBackoffMaxMs: 80, rateLimitMaxRetries: 3, fallbacks: [
 		{ provider: "api029", model: "deepseek-v4.1-flash" },
 		{ provider: "api029", model: "kimi-k3" },
 	] } });
 	for (let n = 1; n <= 5; n += 1) {
 		await failRound(h, n, "cb/qwen-3.8-27b", "api029", "CONTEXT_WINDOW_EXCEEDED", '429: {"message":"Tokens per minute limit exceeded - too many tokens processed."}');
 	}
+	await sleep(200);
 	check("429 限流退避重试且不换模型", h.calls.followups.length === 3 && h.calls.selections.length === 0);
 	check("限流重试的消息正文带提示", h.calls.followups[0]?.content?.[0]?.text?.includes("限流") === true);
 	h.dispose();
