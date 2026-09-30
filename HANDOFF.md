@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-10-01 · 插件版本 v0.3.0 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
+> 最后更新：2026-10-01 · 插件版本 v0.3.1 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
 
 ---
 
@@ -75,7 +75,7 @@ dsh-auto-continue/
      - **同错熔断（默认关闭）**：`identicalFailuresLimit` > 0 时，不同模型连续报 code+message 完全相同的错误达阈值 → 判定网关级故障，本轮放弃续跑；同模型重复报错不计数，错误签名变化即重新计数。按"换到能用为止、中途不停止"的需求默认 0（关闭）；
      - 若失败的模型对不上当前循环位置（用户手动换过模型），以新模型为起点重开循环；
      - 随机退避结束后重新确认状态未变，`agent.followup(继续消息)` 唤起新一轮
-   - **前台可见性**：注入消息正文把模型名放在第一眼位置——重试轮 `继续：<模型> 模型运行失败[（触发限流）]，N 秒后自动重试（i/N）`、切换轮 `继续：<旧模型> 模型连续 N 次运行失败，即将切换到 <新模型>，N 秒后自动重试`（模型名取自轮换状态 rot 的当前位置，比可能不刷新的 requestHeader 可靠）；`/autocont` 状态面板显示每个活动会话的轮换位置（当前模型 i/L）、本轮已切换次数、最近切到哪个模型。注意 dsh 输入框的模型选择器**不跟随** `selectForNextRequest` 的下一轮选择；Toast 通知没有插件可用 API（client-ui-primitives 的 Toast 是组件内部 React 状态），要弹窗需走 client.js 注入 UI 的路子（未实现）
+   - **前台可见性**：注入消息正文把模型名放在第一眼位置——重试轮 `继续：<模型> 模型运行失败[（触发限流）]，N 秒后自动重试（i/N）`、切换轮 `继续：<旧模型> 模型连续 N 次运行失败，即将切换到 <新模型>，N 秒后自动重试`（模型名取自轮换状态 rot 的当前位置，比可能不刷新的 requestHeader 可靠）；`/autocont` 状态面板显示每个活动会话的轮换位置（当前模型 i/L）、本轮已切换次数、最近切到哪个模型。模型选择器的跟随见 §4「右下角模型选择器联动」；Toast 通知没有插件可用 API（client-ui-primitives 的 Toast 是组件内部 React 状态），要弹窗需走 client.js 注入 UI 的路子（未实现）
    - `max-tokens` → 只注入继续，不换模型
    - `aborted`（用户停止）/ `interrupted` / 未知 → 不碰
 
@@ -104,7 +104,8 @@ dsh-auto-continue/
 | `agent.followup({id, role:"user", content:[{type:"text",text}], source:{kind, ...}})` | 注入下一轮 user 消息并唤醒 agent；`agent.steer()` 是注入当前步。⚠️ 三个坑（都实测过）：① 会话格式 v4 持久化层**拒收 `source.kind === "plugin"`**（v3 旧写法，报 "format v4 message requires a producer-owned source kind"，轮次 UNKNOWN 失败）；② `kind: "plugin:<包名>"` 能落盘但**聊天界面不渲染**（气泡只给 kind:"user" 的消息）——所以本插件 v0.2.5 起注入用 `kind: "user"` + `producer: "dsh-auto-continue"` 署名字段（额外字段会被保留），"用户已接手"守卫按 `source.producer` 排除自己的消息；③ 真人消息的 source 是 `{kind:"user", rpcId, clientTimeZone}`，dsh 运行时注入的上下文消息用各自 producer kind（`runtime-context` / `skill-catalog` / `time-context` 等），都不算真人 |
 | 持久化准入（dsh-session-persistence-jsonl worker） | 写入前校验每条消息：source 必须是对象、kind 非空且 ≠ `"plugin"`；不合规的行**不会落盘**（会话文件不损坏），但轮次以 UNKNOWN 失败。其他运行时包对 source.kind 没有白名单校验 |
 | LLM 适配层（`@earendil-works/pi-ai` + `dsh-llm-pi-ai`） | 请求参数由 pi-ai 按模型 `compat` 开关拼装（如 openai-completions 的 `compat.supportsStore` 为真才发 `store:false`）。**中转网关拒收某参数（如 400 "property 'store' is unsupported"）时不用改插件**：profile 的 llm-pi-ai provider 条目支持 `compat: { supportsStore: false }`（route 级，对整条路由生效；`dsh-llm-pi-ai` 的 COMPAT_GATES 表定义了哪些字段可配，openai-completions 对 supportsStore 是 "offer"）。改完重启 dsh |
-| 失败轮的模型归属 | `request-error` 时 `requestHeader` 可能不刷新（一直报上一次成功的模型）。插件用轮换状态 rot 的当前位置做冷却归属与熔断统计，header 原始值留给"用户手动换模型"检测（`syncRotation`）。dsh 的输入框模型选择器**不跟随** `selectForNextRequest` 的下一轮选择，属正常现象 |
+| 失败轮的模型归属 | `request-error` 时 `requestHeader` 可能不刷新（一直报上一次成功的模型）。插件用轮换状态 rot 的当前位置做冷却归属与熔断统计，header 原始值留给"用户手动换模型"检测（`syncRotation`）。 |
+| 右下角模型选择器联动 | 选择器绑定 `agentDefaultModel` 服务（默认模型，对应 profile 的 `agent-default-model` 条目）。界面手动换模型走的远程命令 `sessionController.selectModel` = `agents.selectForNextRequest` + `ctx.agentDefaultModel.saveSelection(selected)` 两步（逆向自 dsh-api-session-controller lib/index.js:720）。插件只做第一步时选择器不动——v0.3.1 起切换时两步都做：`ctx.get("agentDefaultModel").saveSelection({provider, model})`（内部经 configEditor 改写 profile 条目），选择器即跟随更新 |
 | `ctx.get("commands").register({name, description, input:{hint}, handler})` | 注册斜杠指令；handler 返回 `{kind:"success", text}` |
 | 插件管理器判定 | `bundleManifest()` 只认 package.json 的 `dsh.bundle.patch`；管理器 install/reconcile 会把**没有**该声明的依赖从 bundles 数组剔除 |
 
@@ -181,6 +182,7 @@ v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna�
 | v0.2.6 | **行为定稿**：熔断默认关、429 不单独停止、退避 60~90s、预算 100——换到能用为止，中途不停止 |
 | v0.2.7 | 提示文案带模型名（失败的是谁、切到谁，一眼可见） |
 | v0.3.0 | 失败模型 5 小时冷却全程生效 + 磁盘持久化（model-fails.json，重启不丢）；退避改 10~15 秒（开发期） |
+| v0.3.1 | 切换时同步 agentDefaultModel.saveSelection——右下角模型选择器跟随自动更新 |
 
 ## 8. 工具踩坑记录（Windows + Git Bash）
 

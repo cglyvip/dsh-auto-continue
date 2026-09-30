@@ -15,7 +15,7 @@ const mod = await import(pathToFileURL(fileURLToPath(new URL("../lib/index.js", 
 
 function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash" }, cfg }) {
 	const listeners = new Map();
-	const calls = { selections: [], followups: [], errors: [] };
+	const calls = { selections: [], followups: [], errors: [], defaultModelSaves: [] };
 	const agent = {
 		id: "sess-1",
 		status: "idle",
@@ -34,6 +34,7 @@ function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash
 		},
 		get(name) {
 			if (name === "agents") return { selectForNextRequest(a, sel) { calls.selections.push(sel); } };
+			if (name === "agentDefaultModel") return { saveSelection: async (sel) => { calls.defaultModelSaves.push(sel); } };
 			if (name === "llm") return { resolveCallConfig: async (r) => ({ provider: r.provider, model: r.model }) };
 			if (name === "commands") return { register() { return () => {}; } };
 			return undefined;
@@ -96,6 +97,7 @@ async function markFailed(h, model, provider = "fengwind") {
 	check("重试 2 次后切到 deepseek-v4.1-flash", h.calls.selections.length === 1 && h.calls.selections[0].model === "deepseek-v4.1-flash");
 	check("共注入 3 次继续", h.calls.followups.length === 3);
 	check("切换提示写明前后模型名", h.calls.followups[2]?.content?.[0]?.text?.includes("glm-5.3-flash 模型连续 2 次运行失败") === true && h.calls.followups[2]?.content?.[0]?.text?.includes("即将切换到 deepseek-v4.1-flash") === true);
+	check("切换同步更新界面选择器（agentDefaultModel）", h.calls.defaultModelSaves.at(-1)?.model === "deepseek-v4.1-flash");
 	h.dispose();
 }
 
