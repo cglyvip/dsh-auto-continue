@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-09-30 · 插件版本 v0.2.4 · 已在作者主力机实测生效
+> 最后更新：2026-09-30 · 插件版本 v0.2.5 · 已在作者主力机实测生效
 
 ---
 
@@ -102,7 +102,7 @@ dsh-auto-continue/
 | `agent.session.requestHeader()?.config` | 最近一次请求的 `{provider, model}`。注意：**请求失败时 header 可能不更新**，读到的可能是上一次成功的模型（日志里 plan 行的"from"偶发不准就是这个原因，无害） |
 | `ctx.get("agents")` | ApiSessionAgentController：`get(id)` / `resolveAgent(id)` / `selectForNextRequest(agent, {provider, model, reasoningEffort?})` |
 | `ctx.get("llm").resolveCallConfig({provider, model})` | 校验并解析模型（async）；失败说明模型不在目录里 |
-| `agent.followup({id, role:"user", content:[{type:"text",text}], source:{kind:"plugin:<包名>", form:"notice", summary}})` | 注入下一轮 user 消息并唤醒 agent；`agent.steer()` 是注入当前步。⚠️ **会话格式 v4 起持久化层拒收 `source.kind === "plugin"`（v3 旧写法，报 "format v4 message requires a producer-owned source kind"，轮次当场 UNKNOWN 失败）**，第三方插件必须用 `kind: "plugin:<包名>"` 且**去掉 plugin 字段**（这是 `@deepseek-ai/dsh-session-format-v3-to-v4` 迁移器对未知插件的官方升级形态）；另外**真人消息的 source.kind 是 `"user"`**，dsh 运行时注入的上下文消息用各自 producer kind（`runtime-context` / `skill-catalog` / `time-context` 等）——插件判断"用户已接手"要正向匹配 `kind === "user"`，不能反向排除 |
+| `agent.followup({id, role:"user", content:[{type:"text",text}], source:{kind, ...}})` | 注入下一轮 user 消息并唤醒 agent；`agent.steer()` 是注入当前步。⚠️ 三个坑（都实测过）：① 会话格式 v4 持久化层**拒收 `source.kind === "plugin"`**（v3 旧写法，报 "format v4 message requires a producer-owned source kind"，轮次 UNKNOWN 失败）；② `kind: "plugin:<包名>"` 能落盘但**聊天界面不渲染**（气泡只给 kind:"user" 的消息）——所以本插件 v0.2.5 起注入用 `kind: "user"` + `producer: "dsh-auto-continue"` 署名字段（额外字段会被保留），"用户已接手"守卫按 `source.producer` 排除自己的消息；③ 真人消息的 source 是 `{kind:"user", rpcId, clientTimeZone}`，dsh 运行时注入的上下文消息用各自 producer kind（`runtime-context` / `skill-catalog` / `time-context` 等），都不算真人 |
 | 持久化准入（dsh-session-persistence-jsonl worker） | 写入前校验每条消息：source 必须是对象、kind 非空且 ≠ `"plugin"`；不合规的行**不会落盘**（会话文件不损坏），但轮次以 UNKNOWN 失败。其他运行时包对 source.kind 没有白名单校验 |
 | LLM 适配层（`@earendil-works/pi-ai` + `dsh-llm-pi-ai`） | 请求参数由 pi-ai 按模型 `compat` 开关拼装（如 openai-completions 的 `compat.supportsStore` 为真才发 `store:false`）。**中转网关拒收某参数（如 400 "property 'store' is unsupported"）时不用改插件**：profile 的 llm-pi-ai provider 条目支持 `compat: { supportsStore: false }`（route 级，对整条路由生效；`dsh-llm-pi-ai` 的 COMPAT_GATES 表定义了哪些字段可配，openai-completions 对 supportsStore 是 "offer"）。改完重启 dsh |
 | 失败轮的模型归属 | `request-error` 时 `requestHeader` 可能不刷新（一直报上一次成功的模型）。插件用轮换状态 rot 的当前位置做冷却归属与熔断统计，header 原始值留给"用户手动换模型"检测（`syncRotation`）。dsh 的输入框模型选择器**不跟随** `selectForNextRequest` 的下一轮选择，属正常现象 |
