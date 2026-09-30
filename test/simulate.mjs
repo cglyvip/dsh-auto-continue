@@ -1,7 +1,7 @@
 /**
  * dsh-auto-continue 逻辑模拟测试（不依赖 dsh 运行）：
  *   node test/simulate.mjs
- * 用 mock ctx + mock agent 走完整事件流，验证 12 个场景。
+ * 用 mock ctx + mock agent 走完整事件流，验证 14 个场景。
  */
 import { pathToFileURL, fileURLToPath } from "node:url";
 
@@ -53,14 +53,14 @@ function check(label, cond) {
 }
 
 /** 走一轮完整失败流程：request-error → 本轮以 error 结束 → agent 空闲 */
-async function failRound(h, n, model = "glm-5.3-flash", provider = "fengwind") {
+async function failRound(h, n, model = "glm-5.3-flash", provider = "fengwind", code = "SERVER", message) {
 	const base = (n - 1) * 2;
 	h.agent.session.snapshotEvents = () => [
 		{ type: "user/message", seq: base + 1, data: { source: { kind: "user" } } },
-		{ type: "turn/end", seq: base + 2, data: { turn: n, reason: { kind: "error", code: "SERVER" } } },
+		{ type: "turn/end", seq: base + 2, data: { turn: n, reason: { kind: "error", code } } },
 	];
 	h.agent.session.requestHeader = () => ({ config: { provider, model } });
-	await h.fire("agent/request-error", { agent: h.agent, provider, failure: { code: "SERVER", message: "503" } });
+	await h.fire("agent/request-error", { agent: h.agent, provider, failure: { code, message: message ?? `503 from ${model}` } });
 	await h.fire("agent/status", { agent: h.agent, status: "idle" });
 	await sleep(60);
 }
@@ -95,7 +95,9 @@ async function markFailed(h, model, provider = "fengwind") {
 		{ provider: "fengwind", model: "deepseek-v4.1-flash" },
 		{ provider: "fengwind", model: "kimi-k3" },
 	] } });
-	for (let n = 1; n <= 6; n += 1) await failRound(h, n);
+	// 按轮传实际生效的模型：插件切换后，真实请求（及其报错）跟着切换走
+	const models = ["glm-5.3-flash", "glm-5.3-flash", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "kimi-k3", "kimi-k3"];
+	for (let n = 1; n <= 6; n += 1) await failRound(h, n, models[n - 1]);
 	check("切换顺序 deepseek→kimi→glm 循环往复", JSON.stringify(h.calls.selections.map((s) => s.model)) === JSON.stringify(["deepseek-v4.1-flash", "kimi-k3", "glm-5.3-flash"]));
 	h.dispose();
 }
@@ -229,6 +231,29 @@ async function markFailed(h, model, provider = "fengwind") {
 	await h.fire("agent/status", { agent: h.agent, status: "idle" });
 	await sleep(80);
 	check("插件自己的消息不触发真人接手守卫", h.calls.followups.length === 2);
+	h.dispose();
+}
+
+// --- 场景13: INVALID_REQUEST（确定性拒绝）不烧同模型重试，立刻切换
+{
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 3, fallbacks: [
+		{ provider: "api029", model: "deepseek-v4.1-flash" },
+		{ provider: "api029", model: "kimi-k3" },
+	] } });
+	await failRound(h, 1, "cb/qwen-3.8-27b", "api029", "INVALID_REQUEST", "400: property 'store' is unsupported");
+	await failRound(h, 2, "cb/qwen-3.8-27b", "api029", "INVALID_REQUEST", "400: property 'store' is unsupported");
+	check("INVALID_REQUEST 连续快切不重试", JSON.stringify(h.calls.selections.map((s) => s.model)) === JSON.stringify(["deepseek-v4.1-flash", "kimi-k3"]) && h.calls.followups.length === 2);
+	h.dispose();
+}
+
+// --- 场景14: 不同模型报完全相同的错误 → 熔断，不再空转预算
+{
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 3, fallbacks: [
+		{ provider: "api029", model: "deepseek-v4.1-flash" },
+		{ provider: "api029", model: "kimi-k3" },
+	] } });
+	for (let n = 1; n <= 10; n += 1) await failRound(h, n, "cb/qwen-3.8-27b", "api029", "SERVER", "503 gateway down");
+	check("同错熔断后停止续跑", h.calls.followups.length === 8 && h.calls.selections.length === 2);
 	h.dispose();
 }
 

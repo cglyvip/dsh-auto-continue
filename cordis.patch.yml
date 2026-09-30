@@ -14,6 +14,8 @@
         autoSwitchModel: true
         # 同一模型连续重试次数，额度用完才切下一个兜底（0 = 失败立刻切换）
         retriesPerModel: 3
+        # 不同模型连续报同一错误达到该次数即熔断本轮（网关级故障时避免空转预算，0 = 不熔断）
+        identicalFailuresLimit: 3
         modelCooldownMs: 600000
         maxTokensContinue: true
         verbose: false
