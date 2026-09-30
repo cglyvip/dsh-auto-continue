@@ -202,6 +202,21 @@ key 在 `~/.dsh/.credentials.yaml` 的 refs 里，`GET /v1/models` 列真实模�
 兜底链已按实测重建（7 个全绿模型），从此"插件能不能成功"只取决于中转通道状态，
 与插件代码无关。调链时先 curl 实测再加进 fallbacks。
 
+### 7.7.1 全量探测工具（2026-10-01 补充）
+
+`tools/probe-models.mjs`——自动读取 profile 的全部中转 × 全部模型（含凭据库 key），
+逐个发最小真实请求，输出 ✅/❌ 矩阵与按响应延迟排序的可用清单。用法：
+
+```
+node tools/probe-models.mjs
+```
+
+支持 openai-completions 与 openai-responses 两种协议；25 秒超时。**模型可用性随时间
+变化很大**（同一天早上 MiniMax-M3 报 insufficient balance、几小时后自愈），每次调兜底链
+前先跑一遍。2026-10-01 全量结果：6 中转 49 模型，32 可用 / 17 不可用（freeapi-site 整站 502，
+api029 的 grok 系与 space-bunny-alpha、ling（限流）等不可用）。兜底链已按实测延迟重建为
+跨 4 中转的 10 模型混布链（cb/qwen-3.8-27b 1s 最快打头，claude/MiniMax/deepseek 多路冗余）。
+
 ## 8. 工具踩坑记录（Windows + Git Bash）
 
 - 系统 `grep` 实为 ugrep：对 asar 解出的超长行会报 complexity limit，用 `node -e "indexOf"` 定位代替。
