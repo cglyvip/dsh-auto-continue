@@ -184,6 +184,24 @@ v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna�
 | v0.3.0 | 失败模型 5 小时冷却全程生效 + 磁盘持久化（model-fails.json，重启不丢）；退避改 10~15 秒（开发期） |
 | v0.3.1 | 切换时同步 agentDefaultModel.saveSelection——右下角模型选择器跟随自动更新 |
 
+## 7.7 「从来没成功过」的最终诊断（2026-10-01 早晨）
+
+插件机制全部正常（日志实锤），失败全是**中转通道本身的问题**。诊断方法：绕过 dsh 直接 curl 网关——
+key 在 `~/.dsh/.credentials.yaml` 的 refs 里，`GET /v1/models` 列真实模型，`POST /v1/chat/completions`
+逐模型实测。结论（api029 key）：
+
+- ✅ 实测可用：deepseek-v4.1-flash / minimax-m2.7 / qwen3.8-max / deepseek-v4-pro / kimi-k2.6 /
+  deepseek-v4-flash / GLM-5.3-Flash / cb/qwen-3.8-27b
+- ❌ 坏通道（各自死法不同）：MiniMax-M3 与 MiniMax-M2.7-highspeed（上游 insufficient balance）、
+  gpt-5.6-luna（522）、kimi-k3（空响应）、gemini-3.8-flash（Gateway attempt budget exhausted）、
+  grok-4.7（要求 CLI 版本）
+- ⚠️ **大小写陷阱**：网关模型 id 区分大小写——`glm-5.3-flash` 小写返回 model_not_found
+  （"No available channel"），只有 `GLM-5.3-Flash` 有通道。profile 目录里的 id 抄错大小写
+  = 永远 model_unavailable。
+
+兜底链已按实测重建（7 个全绿模型），从此"插件能不能成功"只取决于中转通道状态，
+与插件代码无关。调链时先 curl 实测再加进 fallbacks。
+
 ## 8. 工具踩坑记录（Windows + Git Bash）
 
 - 系统 `grep` 实为 ugrep：对 asar 解出的超长行会报 complexity limit，用 `node -e "indexOf"` 定位代替。
