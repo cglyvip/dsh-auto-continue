@@ -9,9 +9,11 @@
         enabled: true
         autoContinue: true
         continueText: 继续
-        continueMax: 8
+        continueMax: 30
         continueDelayMs: 1500
         autoSwitchModel: true
+        # 同一模型连续重试次数，额度用完才切下一个兜底（0 = 失败立刻切换）
+        retriesPerModel: 3
         modelCooldownMs: 600000
         maxTokensContinue: true
         verbose: false

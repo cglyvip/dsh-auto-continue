@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-09-30 · 插件版本 v0.1.1 · 已在作者主力机实测生效
+> 最后更新：2026-09-30 · 插件版本 v0.2.0 · 已在作者主力机实测生效
 
 ---
 
@@ -10,14 +10,14 @@
 
 | 项 | 内容 |
 |---|---|
-| 这是什么 | DeepSeek Harness (dsh) 桌面版插件：模型请求失败把整轮打断后，自动换兜底模型并注入「继续」，免手动点继续 |
+| 这是什么 | DeepSeek Harness (dsh) 桌面版插件：模型请求失败把整轮打断后，先留在原模型重试 N 次，再沿兜底链循环切换并注入「继续」，免手动点继续 |
 | 仓库 | https://github.com/cglyvip/dsh-auto-continue （公开，分支 main） |
 | 技术底座 | dsh 整个应用构建在 cordis 插件框架上（`@deepseek-ai/cordis` 4.0.4，Koishi 系框架 fork），插件与官方功能同机制 |
 | 运行环境 | dsh 桌面版 0.2.0-rc.2（nightly 通道，内置 node 24 / pnpm 11.7 / python 3.12） |
 | 本机状态 | 已通过插件管理器安装在 `C:\Users\Admin\.dsh\profiles\desktop`，实测触发过自动切换+续跑 |
 | 日志 | `~/.dsh/auto-continue/activity.log`（512KB 自动轮转 .old） |
 | 会话指令 | `/autocont`（status / on / off / reset） |
-| 测试 | `node test/simulate.mjs`（纯 mock，7 场景，不需要跑 dsh） |
+| 测试 | `node test/simulate.mjs`（纯 mock，11 场景，不需要跑 dsh） |
 
 ---
 
@@ -51,7 +51,7 @@ dsh 的用户数据根在 `~/.dsh/`（`DSH_HOME` 环境变量可覆盖）：
 dsh-auto-continue/
 ├── package.json        # 含 dsh.bundle.patch 声明（必须保留）
 ├── cordis.patch.yml    # 随包默认配置：insert 一条 id=auto-continue 的配置
-├── lib/index.js        # 插件全部逻辑（单文件，约 400 行）
+├── lib/index.js        # 插件全部逻辑（单文件，约 500 行）
 ├── test/simulate.mjs   # 7 场景 mock 测试
 ├── README.md           # 面向使用者的说明
 ├── HANDOFF.md          # 本文
@@ -67,8 +67,12 @@ dsh-auto-continue/
 
 1. `agent/request-error`（cordis waterfall，全局）——dsh 内置对模型请求自动重试 5 次（截图上的"已重试模型请求 (5/5)"），每次失败都会流经此事件。本插件**只观察不改写**：记录 `{provider, model, code, message, at}` 到会话槽位，同时写入跨会话共享的模型冷却表 `modelFails`。`model` 取自 `agent.session.requestHeader()?.config`（兜底读最后一个 `model/selection` 事件）。
 2. `agent/status`（emit，全局）——agent 状态机 `idle/running/...`。变 idle 时检查会话事件流（`agent.session.snapshotEvents()`）里最后一个 `turn/end` 的 `data.reason.kind`：
-   - `completed` / `blocked` → 一切归零（继续计数、observedError）
-   - `error` → 主战场。前置守卫全过之后：从兜底链 `fallbacks` 挑第一个"不在冷却期且不是刚失败的那个"模型 → `agents.selectForNextRequest(agent, {provider, model})`（写入持久 `model/selection` 事件，dsh 会自动在下一轮提示词里加"[model changed]"通知）→ 延时 1.5s 重新确认状态未变后 `agent.followup(继续消息)` 唤起新一轮
+   - `completed` / `blocked` → 一切归零（继续计数、observedError、轮换状态 rot）
+   - `error` → 主战场。前置守卫全过之后进入**轮换决策**（会话槽位维护 rot：起点模型 + 链位置 pos + 已重试次数 count）：
+     - 先**留在当前模型重试** `retriesPerModel` 次（默认 3）：只注入继续，不切换；
+     - 额度用完 → 沿链 `[起点模型, ...fallbacks]` 前进一格：**首次离开起点**挑第一个不在冷却期的兜底（全在冷却就取第一个兜底），之后严格 +1、链尾绕回起点，**循环往复直到预算用尽**（循环途中不再看冷却表）；每次切换 `agents.selectForNextRequest(agent, {provider, model})`（写入持久 `model/selection` 事件，dsh 会自动在下一轮提示词里加"[model changed]"通知）；
+     - 若失败的模型对不上当前循环位置（用户手动换过模型），以新模型为起点重开循环；
+     - 延时 1.5s 重新确认状态未变后 `agent.followup(继续消息)` 唤起新一轮
    - `max-tokens` → 只注入继续，不换模型
    - `aborted`（用户停止）/ `interrupted` / 未知 → 不碰
 
@@ -81,7 +85,7 @@ dsh-auto-continue/
 - `slot.continueUsed >= cfg.continueMax`（默认 8，1-20）：每会话继续预算，用完即停
 - `modelFails` 冷却表：失败的模型 10 分钟（`modelCooldownMs`）内不再选，**跨会话共享**（一个模型挂了大概率都挂）
 
-**配置键**（cordis.patch.yml，均可省略用默认）：`enabled` / `autoContinue` / `continueText`(默认"继续") / `continueMax`(8) / `continueDelayMs`(1500) / `autoSwitchModel`(true) / `modelCooldownMs`(600000) / `maxTokensContinue`(true) / `verbose`(false，开详细日志) / `fallbacks`（默认 fengwind 的 6 个模型，不含 glm-5.3-flash）。
+**配置键**（cordis.patch.yml，均可省略用默认）：`enabled` / `autoContinue` / `continueText`(默认"继续") / `continueMax`(30，1-50，重试与切换的继续都计入) / `continueDelayMs`(1500) / `retriesPerModel`(3，同一模型失败后先重试的次数，0=失败立刻切换) / `autoSwitchModel`(true) / `modelCooldownMs`(600000) / `maxTokensContinue`(true) / `verbose`(false，开详细日志) / `fallbacks`（默认 fengwind 的 6 个模型，不含 glm-5.3-flash）。
 
 ## 4. dsh 内部 API 速查（逆向自 app.asar 0.2.0-rc.2，改动风险自担）
 
@@ -127,7 +131,7 @@ dsh-auto-continue/
 
 ## 7. 已知问题与改进方向
 
-- **网关级故障会空转预算**：2026-09-30 实测 fengwind 网关整体 503 时，换到哪个模型都失败，插件以 ~1.5s/次的节奏把 8 次预算烧完才停（约 12 秒）。护栏没破，但可优化：连续 N 次快速失败时指数退避 `continueDelayMs` 或提前放弃本轮。
+- **网关级故障会空转预算**：2026-09-30 实测 fengwind 网关整体 503 时，换到哪个模型都失败。v0.2.0 起每模型先重试 `retriesPerModel`（默认 3）次再沿链循环，默认预算 30 次，快速失败下约 1 分钟量级烧完才停。护栏没破，但可优化：连续 N 次快速失败时指数退避 `continueDelayMs` 或提前放弃本轮。
 - `plan: switch` 日志里的"from 模型"取自 requestHeader，请求失败时 header 不刷新，可能显示旧模型（无害，可改为读 `slot.lastFailure` 前先比对 payload.provider）。
 - 未实现：waterfall 返回 `{kind:"retry"}` 做插件级重试（dsh-purge 有现成写法可抄）；client.js 设置页（`dsh.bundle` 下还有 `client` 声明可挂 UI，参考 dsh-purge 的 client.js 的 `window.__ModuleLoader__.load` 模式）。
 - ⚠️ dsh 桌面版是 **nightly 强制更新**通道（package.json 里有 dshMandatoryUpdatePolicy），升级后本插件如果失灵，先重新逆向确认第 4 节的 API 签名是否变化。
