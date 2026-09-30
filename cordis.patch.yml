@@ -9,19 +9,19 @@
         enabled: true
         autoContinue: true
         continueText: 继续
-        continueMax: 30
+        # 每会话继续上限：重试与切换都计入。默认 100 次，按 1~1.5 分钟间隔约可连续尝试 2 小时
+        continueMax: 100
         continueDelayMs: 1500
         autoSwitchModel: true
         # 同一模型连续重试次数，额度用完才切下一个兜底（0 = 失败立刻切换）
         retriesPerModel: 3
-        # 不同模型连续报同一错误达到该次数即熔断本轮（网关级故障时避免空转预算，0 = 不熔断）
-        identicalFailuresLimit: 3
-        # 失败重试的随机退避区间（毫秒）：实际等待在 [min, max] 均匀随机（默认 1~2 分钟），
+        # 熔断开关（默认关闭）：不同模型连续报同一错误达到该次数才停止本轮。
+        # 按"换到能用为止、中途不停止"的需求保持 0
+        identicalFailuresLimit: 0
+        # 失败重试的随机退避区间（毫秒）：实际等待在 [min, max] 均匀随机（默认 1~1.5 分钟），
         # 拉开重试间隔避免快速重试烧配额；两者都为 0 时退回 continueDelayMs 的短间隔
         retryBackoffMinMs: 60000
-        retryBackoffMaxMs: 120000
-        # 429 限流退避重试的最大次数，超过即放弃本轮
-        rateLimitMaxRetries: 3
+        retryBackoffMaxMs: 90000
         modelCooldownMs: 600000
         maxTokensContinue: true
         verbose: false

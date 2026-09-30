@@ -248,20 +248,32 @@ async function markFailed(h, model, provider = "fengwind") {
 	h.dispose();
 }
 
-// --- 场景14: 不同模型报完全相同的错误 → 熔断，不再空转预算
+// --- 场景14: 熔断默认关闭——不同模型报同样的错也继续循环，不停止
 {
 	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 3, fallbacks: [
 		{ provider: "api029", model: "deepseek-v4.1-flash" },
 		{ provider: "api029", model: "kimi-k3" },
 	] } });
 	for (let n = 1; n <= 10; n += 1) await failRound(h, n, "cb/qwen-3.8-27b", "api029", "SERVER", "503 gateway down");
-	check("同错熔断后停止续跑", h.calls.followups.length === 8 && h.calls.selections.length === 2);
+	// 10 轮 = 起点 3 次重试 + 切 deepseek（1 次切换继续 + 3 次重试）+ 切 kimi（1 次切换继续 + 2 次重试）
+	check("熔断默认关：一直循环不停止", h.calls.followups.length === 10 && h.calls.selections.length === 2);
 	h.dispose();
 }
 
-// --- 场景15: 429 限流 → 随机退避后重试同一模型，超过次数上限则放弃
+// --- 场景14b: 显式开启熔断（identicalFailuresLimit>0）时仍会停止
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, retryBackoffMinMs: 40, retryBackoffMaxMs: 80, rateLimitMaxRetries: 3, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 3, identicalFailuresLimit: 3, fallbacks: [
+		{ provider: "api029", model: "deepseek-v4.1-flash" },
+		{ provider: "api029", model: "kimi-k3" },
+	] } });
+	for (let n = 1; n <= 10; n += 1) await failRound(h, n, "cb/qwen-3.8-27b", "api029", "SERVER", "503 gateway down");
+	check("显式开启熔断后停止续跑", h.calls.followups.length === 8 && h.calls.selections.length === 2);
+	h.dispose();
+}
+
+// --- 场景15: 429 限流不再单独停止，照常走"重试 3 遍 → 切换"的循环
+{
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retryBackoffMinMs: 40, retryBackoffMaxMs: 80, fallbacks: [
 		{ provider: "api029", model: "deepseek-v4.1-flash" },
 		{ provider: "api029", model: "kimi-k3" },
 	] } });
@@ -269,8 +281,8 @@ async function markFailed(h, model, provider = "fengwind") {
 		await failRound(h, n, "cb/qwen-3.8-27b", "api029", "CONTEXT_WINDOW_EXCEEDED", '429: {"message":"Tokens per minute limit exceeded - too many tokens processed."}');
 	}
 	await sleep(200);
-	check("429 限流退避重试且不换模型", h.calls.followups.length === 3 && h.calls.selections.length === 0);
-	check("限流重试的消息正文带提示", h.calls.followups[0]?.content?.[0]?.text?.includes("限流") === true);
+	check("429 照常重试 3 遍后切换", h.calls.followups.length === 5 && JSON.stringify(h.calls.selections.map((s) => s.model)) === JSON.stringify(["deepseek-v4.1-flash"]));
+	check("限流轮的消息正文带提示", h.calls.followups[0]?.content?.[0]?.text?.includes("限流") === true);
 	h.dispose();
 }
 
