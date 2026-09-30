@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-09-30 · 插件版本 v0.2.7 · 已在作者主力机实测生效
+> 最后更新：2026-10-01 · 插件版本 v0.2.7 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
 
 ---
 
@@ -14,10 +14,10 @@
 | 仓库 | https://github.com/cglyvip/dsh-auto-continue （公开，分支 main） |
 | 技术底座 | dsh 整个应用构建在 cordis 插件框架上（`@deepseek-ai/cordis` 4.0.4，Koishi 系框架 fork），插件与官方功能同机制 |
 | 运行环境 | dsh 桌面版 0.2.0-rc.2（nightly 通道，内置 node 24 / pnpm 11.7 / python 3.12） |
-| 本机状态 | 已通过插件管理器安装在 `C:\Users\Admin\.dsh\profiles\desktop`，实测触发过自动切换+续跑 |
+| 双机状态 | 主力机（`C:\Users\Admin`，dsh 0.2.0-rc.2 逆向基线）＋ 新机（`C:\Users\CGLY`，装的是更新的 nightly，含会话格式 v4）。两台都通过 profile 装本插件；新机 2026-10-01 实弹验证了完整循环 |
 | 日志 | `~/.dsh/auto-continue/activity.log`（512KB 自动轮转 .old） |
 | 会话指令 | `/autocont`（status / on / off / reset） |
-| 测试 | `node test/simulate.mjs`（纯 mock，15 场景，不需要跑 dsh） |
+| 测试 | `node test/simulate.mjs`（纯 mock，16 场景 21 断言，不需要跑 dsh） |
 
 ---
 
@@ -51,8 +51,8 @@ dsh 的用户数据根在 `~/.dsh/`（`DSH_HOME` 环境变量可覆盖）：
 dsh-auto-continue/
 ├── package.json        # 含 dsh.bundle.patch 声明（必须保留）
 ├── cordis.patch.yml    # 随包默认配置：insert 一条 id=auto-continue 的配置
-├── lib/index.js        # 插件全部逻辑（单文件，约 500 行）
-├── test/simulate.mjs   # 7 场景 mock 测试
+├── lib/index.js        # 插件全部逻辑（单文件，约 610 行）
+├── test/simulate.mjs   # 16 场景 mock 测试
 ├── README.md           # 面向使用者的说明
 ├── HANDOFF.md          # 本文
 ├── LICENSE             # MIT
@@ -114,12 +114,18 @@ dsh-auto-continue/
 
 1. 装 DeepSeek 桌面版（下载渠道同原机）、Git、Node.js（≥20 即可，测试脚本用）。
 2. `git clone https://github.com/cglyvip/dsh-auto-continue`（需要 cglyvip 账号权限的机器直接用 HTTPS + Git Credential Manager 登录）。
-3. 先跑 `node test/simulate.mjs` 确认 7 个场景全绿。
+3. 先跑 `node test/simulate.mjs` 确认 16 场景全绿。
 4. 装进 dsh（二选一）：
    - **插件管理器**（推荐）：dsh 插件管理界面输入 `https://github.com/cglyvip/dsh-auto-continue` 安装。注意：如果之前手动装过同包，先删干净，否则报"无法从依赖变更中确定安装了哪一个包"。
    - **手动**：编辑 `~/.dsh/profiles/desktop/package.json`，dependencies 加 `"dsh-auto-continue": "github:cglyvip/dsh-auto-continue"`，`dsh.profile.bundles` 数组加 `"dsh-auto-continue"`，然后 `cd ~/.dsh/profiles/desktop && pnpm install`（dsh 自带 pnpm，Windows 下：`node ~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.cjs install`）。
-5. 重启 dsh，看 `~/.dsh/auto-continue/activity.log` 出现 `v0.1.1 loaded`，会话里 `/autocont` 有输出即成。
-6. 兜底链默认是 fengwind 中转的模型清单。**换中转/换机器时改 `fallbacks`**：在 profile 的 `cordis.patch.yml` 里加同 id 覆盖条目（示例见 README），别直接改仓库里的默认值。
+5. 重启 dsh，看 `~/.dsh/auto-continue/activity.log` 出现 `vX.Y.Z loaded`（且 fallbacks 是本机中转的真实模型），会话里 `/autocont` 有输出即成。
+6. 兜底链默认是 fengwind 中转的模型清单。**换中转/换机器时改 `fallbacks`**：在 profile 的 `cordis.patch.yml` 里加同 id 覆盖条目（示例见 README），别直接改仓库里的默认值。**链里的模型必须本 key 真实可用**——实测 key 上未开通的模型统一报 503『当前模型暂不可用』，循环会在它们身上白烧重试额度。判别办法：看日志里哪些模型报过非 model_unavailable 的错误（说明到达过模型）。
+7. **已装机机器的插件更新命令**（Windows，用 dsh 自带 pnpm；github 依赖锁着 commit，要 update 才会重解析）：
+   ```
+   cd ~/.dsh/profiles/desktop
+   node "<dsh安装目录>/resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.cjs" update dsh-auto-continue
+   ```
+   然后重启 dsh。新机（CGLY）的 profile 另有两个实测必要覆盖：`llm-pi-ai` 的 api029/api773 加 `compat: { supportsStore: false }`（中转拒收 store 参数），`auto-continue` 的 `fallbacks` 按实证可用性排序（MiniMax-M3 优先）。
 
 ## 6. 开发与发布流程
 
@@ -143,6 +149,37 @@ dsh-auto-continue/
 - 未实现：waterfall 返回 `{kind:"retry"}` 做插件级重试（dsh-purge 有现成写法可抄）；client.js 设置页（`dsh.bundle` 下还有 `client` 声明可挂 UI，参考 dsh-purge 的 client.js 的 `window.__ModuleLoader__.load` 模式）。
 - ⚠️ dsh 桌面版是 **nightly 强制更新**通道（package.json 里有 dshMandatoryUpdatePolicy），升级后本插件如果失灵，先重新逆向确认第 4 节的 API 签名是否变化。
 - **v0.2.1 的教训（2026-09-30 实测）**：新机器装了更新的 dsh nightly（内置会话格式 v3→v4 迁移），v0.2.0 注入的 `source.kind:"plugin"` 消息被持久化层当场拒收，每轮以 "format v4 message requires a producer-owned source kind"（UNKNOWN）失败——插件自身轮换逻辑完全正常（日志可见 retry 1/3→2/3→3/3→switch），但注入永不落盘，等于空转预算。排查路径：解包 `app.asar` → `dsh-session-format-v3-to-v4` 与 `dsh-session-persistence-jsonl/lib/worker.cjs` 搜 "producer-owned"。会话文件是多帧 zstd（`session.v4.jsonl.zstd`），Node 流式解压只出第一帧，要按 magic `28b52ffd` 切帧逐帧 `zstdDecompressSync`。
+
+## 7.5 实弹验证记录（2026-10-01 凌晨，新机 CGLY）
+
+v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna）：
+
+```
+00:11:14  重试 1/3          00:15:17  ★切换 gpt-5.6-luna → MiniMax-M3
+00:12:56  重试 2/3（65s）   00:20:24  MiniMax-M3 重试 2/3
+00:14:37  重试 3/3（61s）   00:22:52  MiniMax-M3 重试 3/3
+                            00:23:29  ★切换 MiniMax-M3 → MiniMax-M2.7-highspeed
+                            00:26:56  M2.7 重试 1/3（已用 9/100）
+```
+
+- 所有间隔落在 61~87 秒（1~1.5 分钟随机区间 ✓）；熔断关闭后循环不停 ✓；预算计数正常 ✓。
+- 当时 key 整体故障期：连 MiniMax-M3 都报 model_unavailable，插件按要求持续循环不停手——『换到能用为止』的行为定稿依据。
+- **界面渲染确认**：`kind:"user"` 的注入消息以普通用户气泡显示（作者原话『看到了，是我发出的文字』），模型名提示完全可见；`plugin:<包名>` 形态的旧结论（能落盘但界面不渲染）保持有效。
+
+## 7.6 版本历史
+
+| 版本 | 要点 |
+|---|---|
+| v0.1.0 | 首版：失败即切兜底 + 注入「继续」 |
+| v0.1.1 | 声明 dsh.bundle.patch 修复插件管理器安装 |
+| v0.2.0 | 同模型先重试 N 次（retriesPerModel）再沿链循环切换（循环往复） |
+| v0.2.1 | 适配会话格式 v4：source.kind 弃 "plugin" 改 "plugin:<包名>"；真人判定正向匹配 |
+| v0.2.2 | INVALID_REQUEST 快切；同错熔断（后默认关）；冷却归属用轮换状态 |
+| v0.2.3 | 429 限流退避；切换提示进消息正文 |
+| v0.2.4 | 重试间隔随机化；/autocont 显示会话轮换状态 |
+| v0.2.5 | 注入改 kind:"user"+producer 署名（界面可见）；兜底链按实证可用性排序 |
+| v0.2.6 | **行为定稿**：熔断默认关、429 不单独停止、退避 60~90s、预算 100——换到能用为止，中途不停止 |
+| v0.2.7 | 提示文案带模型名（失败的是谁、切到谁，一眼可见） |
 
 ## 8. 工具踩坑记录（Windows + Git Bash）
 
