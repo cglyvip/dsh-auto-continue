@@ -18,11 +18,13 @@
         # 熔断开关（默认关闭）：不同模型连续报同一错误达到该次数才停止本轮。
         # 按"换到能用为止、中途不停止"的需求保持 0
         identicalFailuresLimit: 0
-        # 失败重试的随机退避区间（毫秒）：实际等待在 [min, max] 均匀随机（默认 1~1.5 分钟），
-        # 拉开重试间隔避免快速重试烧配额；两者都为 0 时退回 continueDelayMs 的短间隔
-        retryBackoffMinMs: 60000
-        retryBackoffMaxMs: 90000
-        modelCooldownMs: 600000
+        # 失败重试的随机退避区间（毫秒）：实际等待在 [min, max] 均匀随机。
+        # 开发阶段 10~15 秒快速迭代；上线想拉长改回 60000/90000（1~1.5 分钟）
+        retryBackoffMinMs: 10000
+        retryBackoffMaxMs: 15000
+        # 失败模型冷却时长（默认 5 小时）：冷却期内每次切换都跳过它，
+        # 记录持久化在 ~/.dsh/auto-continue/model-fails.json，重启 dsh 不丢
+        modelCooldownMs: 18000000
         maxTokensContinue: true
         verbose: false
         fallbacks:

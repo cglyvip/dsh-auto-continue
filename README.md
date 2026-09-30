@@ -6,10 +6,10 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
 
 ## 行为
 
-- 监听 `agent/request-error`（只观察，不改写内置重试）：记录失败的 `provider/model`，进入冷却期（默认 10 分钟，只影响"首次离开起点"的切换目标）。
+- 监听 `agent/request-error`（只观察，不改写内置重试）：记录失败的 `provider/model`，进入冷却期（**默认 5 小时**，冷却期内每次切换都跳过它；记录持久化在 `~/.dsh/auto-continue/model-fails.json`，重启 dsh 不丢）。
 - 本轮以 `error` 结束、agent 空闲后（默认延迟 1.5 秒）：
-  1. 先**留在当前模型重试** `retriesPerModel` 次（默认 3，间隔 1~1.5 分钟随机，每次只注入「继续」，不换模型）；
-  2. 重试额度用完才切换：沿「起点模型 → 兜底链」前进一格，**链尾绕回起点，循环往复，直到换到能用的模型**。首次离开起点挑第一个不在冷却期的兜底（全在冷却就取第一个兜底），之后严格按链顺序循环；
+  1. 先**留在当前模型重试** `retriesPerModel` 次（默认 3，间隔 10~15 秒随机——上线可改回 1~1.5 分钟，每次只注入「继续」，不换模型）；
+  2. 重试额度用完才切换：沿「起点模型 → 兜底链」前进到**下一个不在冷却期的模型**（失败模型冷却 5 小时，冷却期内每次切换都跳过它，记录持久化重启不丢；全链都在冷却才退回顺序循环），**循环往复，直到换到能用的模型**；
   3. 切换通过 `agents.selectForNextRequest` 写入会话（dsh 会自动在下一轮附加"模型已切换"提示），随后注入「继续」唤醒。
 - 期间用户手动换了模型再失败：以新模型为起点重开一轮循环。
 - `max-tokens` 截断：只注入「继续」，不换模型。
@@ -31,7 +31,7 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
       - { provider: fengwind, model: kimi-k3 }
 ```
 
-各字段：`enabled` 总开关；`autoContinue` 自动续跑；`continueText` 注入的文本；`continueMax` 每会话继续次数上限（1-500，默认 100，重试与切换都计入）；`continueDelayMs` 失败后等待毫秒数（仅在随机退避禁用时生效）；`retriesPerModel` 同一模型失败后先重试的次数（0-10，默认 3，0 = 失败立刻切换）；`retryBackoffMinMs`/`retryBackoffMaxMs` 重试随机退避区间毫秒（默认 60000/90000）；`identicalFailuresLimit` 同错熔断阈值（默认 0 关闭）；`autoSwitchModel` 自动换模型；`modelCooldownMs` 失败模型冷却毫秒；`maxTokensContinue` max-tokens 也续；`fallbacks` 兜底链（provider+model 列表，按优先级排序）。不配置 fallbacks 时使用内置默认链（fengwind 的 6 个模型，不含 glm-5.3-flash）。
+各字段：`enabled` 总开关；`autoContinue` 自动续跑；`continueText` 注入的文本；`continueMax` 每会话继续次数上限（1-500，默认 100，重试与切换都计入）；`continueDelayMs` 失败后等待毫秒数（仅在随机退避禁用时生效）；`retriesPerModel` 同一模型失败后先重试的次数（0-10，默认 3，0 = 失败立刻切换）；`retryBackoffMinMs`/`retryBackoffMaxMs` 重试随机退避区间毫秒（默认 10000/15000）；`identicalFailuresLimit` 同错熔断阈值（默认 0 关闭）；`autoSwitchModel` 自动换模型；`modelCooldownMs` 失败模型冷却毫秒（默认 18000000 = 5 小时，冷却期内每次切换都跳过并持久化）；`maxTokensContinue` max-tokens 也续；`fallbacks` 兜底链（provider+model 列表，按优先级排序）。不配置 fallbacks 时使用内置默认链（fengwind 的 6 个模型，不含 glm-5.3-flash）。
 
 ## 会话内指令
 

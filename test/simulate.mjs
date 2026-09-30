@@ -1,9 +1,15 @@
 /**
  * dsh-auto-continue 逻辑模拟测试（不依赖 dsh 运行）：
  *   node test/simulate.mjs
- * 用 mock ctx + mock agent 走完整事件流，验证 15 个场景。
+ * 用 mock ctx + mock agent 走完整事件流，验证 16 个场景。
  */
+import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
+
+// 把 DSH_HOME 指到临时目录：隔离生产日志与冷却记录文件（model-fails.json），互不污染
+process.env.DSH_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-auto-continue-test-"));
 
 const mod = await import(pathToFileURL(fileURLToPath(new URL("../lib/index.js", import.meta.url))).href);
 
@@ -33,6 +39,8 @@ function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash
 			return undefined;
 		},
 	};
+	// 每个场景独立的冷却状态：清掉上一个场景持久化的 model-fails.json
+	try { fs.rmSync(path.join(process.env.DSH_HOME, "auto-continue", "model-fails.json"), { force: true }); } catch { /* ignore */ }
 	// 测试默认关闭随机长退避（0/0 → 退回 continueDelayMs），需要测退避的场景自行覆盖
 	const dispose = mod.apply(ctx, { retryBackoffMinMs: 0, retryBackoffMaxMs: 0, ...cfg });
 	return {

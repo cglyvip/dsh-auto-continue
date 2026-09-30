@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-10-01 · 插件版本 v0.2.7 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
+> 最后更新：2026-10-01 · 插件版本 v0.3.0 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
 
 ---
 
@@ -17,7 +17,7 @@
 | 双机状态 | 主力机（`C:\Users\Admin`，dsh 0.2.0-rc.2 逆向基线）＋ 新机（`C:\Users\CGLY`，装的是更新的 nightly，含会话格式 v4）。两台都通过 profile 装本插件；新机 2026-10-01 实弹验证了完整循环 |
 | 日志 | `~/.dsh/auto-continue/activity.log`（512KB 自动轮转 .old） |
 | 会话指令 | `/autocont`（status / on / off / reset） |
-| 测试 | `node test/simulate.mjs`（纯 mock，16 场景 21 断言，不需要跑 dsh） |
+| 测试 | `node test/simulate.mjs`（纯 mock，16 场景 22 断言，不需要跑 dsh） |
 
 ---
 
@@ -71,7 +71,7 @@ dsh-auto-continue/
    - `error` → 主战场。前置守卫全过之后进入**轮换决策**（会话槽位维护 rot：起点模型 + 链位置 pos + 已重试次数 count）：
      - **随机退避**：所有失败重试（同模型重试、切换后的继续）的等待都在 `retryBackoffMinMs`~`retryBackoffMaxMs`（默认 60s~90s）均匀随机，拉开间隔避免烧配额；429 限流**不再单独停止**（正文标注"触发限流"，照常走重试→切换循环）；max-tokens 续跑仍用 `continueDelayMs` 快速注入；
      - 先**留在当前模型重试** `retriesPerModel` 次（默认 3）：只注入继续，不切换；但 `code === "INVALID_REQUEST"`（4xx 确定性拒绝，如同转网关拒收请求参数）同模型重试无意义，**首轮失败就直接切换**；
-     - 额度用完 → 沿链 `[起点模型, ...fallbacks]` 前进一格：**首次离开起点**挑第一个不在冷却期的兜底（全在冷却就取第一个兜底），之后严格 +1、链尾绕回起点，**循环往复直到预算用尽**（循环途中不再看冷却表）；每次切换 `agents.selectForNextRequest(agent, {provider, model})`（写入持久 `model/selection` 事件，dsh 会自动在下一轮提示词里加"[model changed]"通知）；
+     - 额度用完 → 沿链 `[起点模型, ...fallbacks]` 前进到**下一个不在冷却期的模型**（冷却默认 5 小时，冷却期内每次切换都跳过它——包括绕回起点时；全链都在冷却才退回严格 +1，保持循环不停止，冷却到期后自动恢复跳过）；切换 `agents.selectForNextRequest(agent, {provider, model})`（写入持久 `model/selection` 事件，dsh 会自动在下一轮提示词里加"[model changed]"通知）；冷却记录持久化在 `~/.dsh/auto-continue/model-fails.json`，**重启 dsh 不丢**，`/autocont reset` 清空；
      - **同错熔断（默认关闭）**：`identicalFailuresLimit` > 0 时，不同模型连续报 code+message 完全相同的错误达阈值 → 判定网关级故障，本轮放弃续跑；同模型重复报错不计数，错误签名变化即重新计数。按"换到能用为止、中途不停止"的需求默认 0（关闭）；
      - 若失败的模型对不上当前循环位置（用户手动换过模型），以新模型为起点重开循环；
      - 随机退避结束后重新确认状态未变，`agent.followup(继续消息)` 唤起新一轮
@@ -88,7 +88,7 @@ dsh-auto-continue/
 - `slot.continueUsed >= cfg.continueMax`（默认 8，1-20）：每会话继续预算，用完即停
 - `modelFails` 冷却表：失败的模型 10 分钟（`modelCooldownMs`）内不再选，**跨会话共享**（一个模型挂了大概率都挂）
 
-**配置键**（cordis.patch.yml，均可省略用默认）：`enabled` / `autoContinue` / `continueText`(默认"继续") / `continueMax`(100，1-500，重试与切换的继续都计入，按 1~1.5 分钟间隔约 2 小时) / `continueDelayMs`(1500，仅在随机退避被禁用时生效) / `retriesPerModel`(3，同一模型失败后先重试的次数，0=失败立刻切换) / `identicalFailuresLimit`(0=关闭，不同模型连续同错的熔断阈值) / `retryBackoffMinMs`(60000) / `retryBackoffMaxMs`(90000，失败重试的实际等待在 [min,max] 均匀随机，都为 0 时退回 continueDelayMs) / `autoSwitchModel`(true) / `modelCooldownMs`(600000) / `maxTokensContinue`(true) / `verbose`(false，开详细日志) / `fallbacks`（默认 fengwind 的 6 个模型，不含 glm-5.3-flash；**换机器/换中转必须改成本中转真实存在的模型**）。
+**配置键**（cordis.patch.yml，均可省略用默认）：`enabled` / `autoContinue` / `continueText`(默认"继续") / `continueMax`(100，1-500，重试与切换的继续都计入，按 1~1.5 分钟间隔约 2 小时) / `continueDelayMs`(1500，仅在随机退避被禁用时生效) / `retriesPerModel`(3，同一模型失败后先重试的次数，0=失败立刻切换) / `identicalFailuresLimit`(0=关闭，不同模型连续同错的熔断阈值) / `retryBackoffMinMs`(10000) / `retryBackoffMaxMs`(15000，失败重试的实际等待在 [min,max] 均匀随机——开发阶段 10~15 秒，上线可改回 60000/90000；都为 0 时退回 continueDelayMs) / `modelCooldownMs`(18000000，失败模型冷却 5 小时，冷却期内每次切换都跳过，持久化在 model-fails.json) / `autoSwitchModel`(true) / `modelCooldownMs`(600000) / `maxTokensContinue`(true) / `verbose`(false，开详细日志) / `fallbacks`（默认 fengwind 的 6 个模型，不含 glm-5.3-flash；**换机器/换中转必须改成本中转真实存在的模型**）。
 
 ## 4. dsh 内部 API 速查（逆向自 app.asar 0.2.0-rc.2，改动风险自担）
 
@@ -180,6 +180,7 @@ v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna�
 | v0.2.5 | 注入改 kind:"user"+producer 署名（界面可见）；兜底链按实证可用性排序 |
 | v0.2.6 | **行为定稿**：熔断默认关、429 不单独停止、退避 60~90s、预算 100——换到能用为止，中途不停止 |
 | v0.2.7 | 提示文案带模型名（失败的是谁、切到谁，一眼可见） |
+| v0.3.0 | 失败模型 5 小时冷却全程生效 + 磁盘持久化（model-fails.json，重启不丢）；退避改 10~15 秒（开发期） |
 
 ## 8. 工具踩坑记录（Windows + Git Bash）
 
