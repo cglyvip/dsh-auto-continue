@@ -1,0 +1,30 @@
+# dsh-auto-continue 随包默认配置层：
+# 包声明 dsh.bundle.patch 指向本文件，安装时作为该组合包的 patch 层加载，
+# 用 insert 把插件条目（含默认配置）注入 profile。
+# 用户如需覆盖个别字段，在 profile 的 cordis.patch.yml 里加同 id 条目即可（按层合并）。
+- insert:
+    - id: auto-continue
+      name: dsh-auto-continue
+      config:
+        enabled: true
+        autoContinue: true
+        continueText: 继续
+        continueMax: 8
+        continueDelayMs: 1500
+        autoSwitchModel: true
+        modelCooldownMs: 600000
+        maxTokensContinue: true
+        verbose: false
+        fallbacks:
+          - provider: fengwind
+            model: deepseek-v4.1-flash
+          - provider: fengwind
+            model: kimi-k3
+          - provider: fengwind
+            model: mimo-v2.6-flash
+          - provider: fengwind
+            model: gemini-3.8-flash
+          - provider: fengwind
+            model: muse-spark-1.3-contributor
+          - provider: fengwind
+            model: space-bunny-alpha

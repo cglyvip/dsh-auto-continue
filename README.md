@@ -13,27 +13,20 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
 - 每会话继续上限默认 8 次，正常完成后自动清零，防止无限循环。
 - 只处理本插件亲眼观察到的失败，重启后不会去续跑历史遗留的失败轮。
 
-## 配置（cordis.patch.yml）
+## 配置
+
+默认配置随包自带（`cordis.patch.yml`，经 package.json 的 `dsh.bundle.patch` 声明加载——**插件管理器要求包声明这个字段，否则报"这个包没有声明组合包"**）。要覆盖个别字段（比如改兜底链），在 profile 的 `cordis.patch.yml` 里加同 id 条目即可，按层合并：
 
 ```yaml
 - id: auto-continue
-  name: dsh-auto-continue
   config:
-    enabled: true
-    autoContinue: true        # 总开关
-    continueText: "继续"
-    continueMax: 8            # 每会话继续次数上限 (1-20)
-    continueDelayMs: 1500     # 失败后等待多久再续跑 (0-30000)
-    autoSwitchModel: true     # 失败后自动换兜底模型
-    modelCooldownMs: 600000   # 失败模型冷却 10 分钟
-    maxTokensContinue: true   # max-tokens 截断也自动续
-    verbose: false
-    fallbacks:                # 兜底链，按优先级排序
+    continueMax: 12
+    fallbacks:
       - { provider: fengwind, model: deepseek-v4.1-flash }
       - { provider: fengwind, model: kimi-k3 }
 ```
 
-不写 `fallbacks` 时使用内置默认链（fengwind 的 6 个模型，不含 glm-5.3-flash）。
+各字段：`enabled` 总开关；`autoContinue` 自动续跑；`continueText` 注入的文本；`continueMax` 每会话继续次数上限（1-20）；`continueDelayMs` 失败后等待毫秒数；`autoSwitchModel` 自动换模型；`modelCooldownMs` 失败模型冷却毫秒；`maxTokensContinue` max-tokens 也续；`fallbacks` 兜底链（provider+model 列表，按优先级排序）。不配置 fallbacks 时使用内置默认链（fengwind 的 6 个模型，不含 glm-5.3-flash）。
 
 ## 会话内指令
 
@@ -47,6 +40,8 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
 
 ## 安装 / 卸载
 
-安装（desktop profile）：把本目录复制到 `~/.dsh/local-plugins/`，在 `~/.dsh/profiles/desktop/package.json` 的 `dependencies` 加 `"dsh-auto-continue": "file:../local-plugins/dsh-auto-continue"`、`dsh.profile.bundles` 数组加 `"dsh-auto-continue"`，然后在 profile 目录 `pnpm install`，重启 dsh。
+**插件管理器安装**：在 dsh 插件管理界面输入 `github:cglyvip/dsh-auto-continue`（或仓库地址）安装即可。前提：包必须声明 `dsh.bundle.patch`（本仓库已声明），否则管理器报"这个包没有声明组合包，不能作为插件管理"。
 
-卸载：反向删除上述三处 + `cordis.patch.yml` 里的配置段，profile 目录再跑一次 `pnpm install`。
+**手动安装**（desktop profile）：在 `~/.dsh/profiles/desktop/package.json` 的 `dependencies` 加 `"dsh-auto-continue": "github:cglyvip/dsh-auto-continue"`、`dsh.profile.bundles` 数组加 `"dsh-auto-continue"`，然后在 profile 目录 `pnpm install`，重启 dsh。默认配置由随包 `cordis.patch.yml` 自动注入，无需改 profile 的 patch 文件。
+
+卸载：在插件管理器卸载，或反向删除上述两处后 `pnpm install`。
