@@ -87,7 +87,7 @@ async function markFailed(h, model, provider = "fengwind") {
 	for (let n = 1; n <= 3; n += 1) await failRound(h, n);
 	check("重试 2 次后切到 deepseek-v4.1-flash", h.calls.selections.length === 1 && h.calls.selections[0].model === "deepseek-v4.1-flash");
 	check("共注入 3 次继续", h.calls.followups.length === 3);
-	check("切换提示写进消息正文", h.calls.followups[2]?.content?.[0]?.text?.startsWith("继续（已自动切换到 deepseek-v4.1-flash") === true);
+	check("切换提示写明前后模型名", h.calls.followups[2]?.content?.[0]?.text?.includes("glm-5.3-flash 模型连续 2 次运行失败") === true && h.calls.followups[2]?.content?.[0]?.text?.includes("即将切换到 deepseek-v4.1-flash") === true);
 	h.dispose();
 }
 
