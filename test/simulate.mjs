@@ -332,5 +332,44 @@ async function markFailed(h, model, provider = "fengwind") {
 	h.dispose();
 }
 
+// --- 场景18: excludeProviders 把指定中转整体排除出轮换池
+{
+	const h = makeHarness({
+		cfg: { continueDelayMs: 30, excludeProviders: ["deepseek-official"], fallbacks: [{ provider: "fengwind", model: "mimo-v2.6-flash" }] },
+		llm: {
+			listProviders: () => [{ id: "fengwind" }, { id: "deepseek-official" }],
+			listModels: async (pid) => pid === "fengwind"
+				? [{ id: "mimo-v2.6-flash" }, { id: "deepseek-v4.1-flash" }]
+				: [{ id: "deepseek-flash" }],
+		},
+	});
+	for (let n = 1; n <= 6; n += 1) await failRound(h, n);
+	await sleep(150);
+	check("排除中转不进轮换池", h.calls.selections.every((s) => s.provider !== "deepseek-official"));
+	h.dispose();
+}
+
+// --- 场景19: AUTH 类失败把整个中转拉黑，轮换直接跳过它的全部模型
+{
+	const h = makeHarness({
+		cfg: { continueDelayMs: 30, fallbacks: [{ provider: "fengwind", model: "mimo-v2.6-flash" }] },
+		llm: {
+			listProviders: () => [{ id: "fengwind" }, { id: "badkey" }],
+			listModels: async (pid) => pid === "fengwind"
+				? [{ id: "mimo-v2.6-flash" }, { id: "deepseek-v4.1-flash" }]
+				: [{ id: "model-a" }, { id: "model-b" }],
+		},
+	});
+	// 第 1 轮正常失败 → 重试；第 2 轮 AUTH 失败 → badkey 整个中转拉黑；后续轮换必须绕开 badkey
+	await failRound(h, 1, "mimo-v2.6-flash", "fengwind", "SERVER");
+	await failRound(h, 2, "model-a", "badkey", "AUTH", "Authentication Fails, Your api key is invalid");
+	for (let n = 3; n <= 6; n += 1) await failRound(h, n, "model-a", "badkey", "SERVER");
+	await sleep(150);
+	const models = h.calls.selections.map((s) => `${s.provider}/${s.model}`);
+	check("AUTH 拉黑后不再选该中转的任何模型", h.calls.selections.every((s) => s.provider !== "badkey"));
+	check("轮换继续在健康中转上进行", models.includes("fengwind/deepseek-v4.1-flash"));
+	h.dispose();
+}
+
 console.log(failed === 0 ? "\n全部通过 ✅" : `\n${failed} 项失败 ❌`);
 process.exit(failed === 0 ? 0 : 1);

@@ -31,7 +31,7 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
       - { provider: fengwind, model: kimi-k3 }
 ```
 
-各字段：`enabled` 总开关；`autoContinue` 自动续跑；`continueText` 注入的文本；`continueMax` 每会话继续次数上限（1-500，默认 100，重试与切换都计入）；`continueDelayMs` 失败后等待毫秒数（仅在随机退避禁用时生效）；`retriesPerModel` 同一模型失败后先重试的次数（0-10，默认 1，0 = 失败立刻切换）；`retryBackoffMinMs`/`retryBackoffMaxMs` 重试随机退避区间毫秒（默认 10000/15000）；`identicalFailuresLimit` 同错熔断阈值（默认 0 关闭）；`autoSwitchModel` 自动换模型；`modelCooldownMs` 失败模型冷却毫秒（默认 18000000 = 5 小时，冷却期内每次切换都跳过并持久化）；`maxTokensContinue` max-tokens 也续；`fallbacks` 兜底链（provider+model 列表，按优先级排序）；`useAllConfiguredModels` 轮换池是否自动纳入 profile 里全部已配置中转×模型（默认 true：fallbacks 作优先前缀，llm 服务枚举出的其余模型去重追加到链尾，新加中转/模型免配置自动进轮换）。
+各字段：`enabled` 总开关；`autoContinue` 自动续跑；`continueText` 注入的文本；`continueMax` 每会话继续次数上限（1-500，默认 100，重试与切换都计入）；`continueDelayMs` 失败后等待毫秒数（仅在随机退避禁用时生效）；`retriesPerModel` 同一模型失败后先重试的次数（0-10，默认 1，0 = 失败立刻切换）；`retryBackoffMinMs`/`retryBackoffMaxMs` 重试随机退避区间毫秒（默认 10000/15000）；`identicalFailuresLimit` 同错熔断阈值（默认 0 关闭）；`autoSwitchModel` 自动换模型；`modelCooldownMs` 失败模型冷却毫秒（默认 18000000 = 5 小时，冷却期内每次切换都跳过并持久化）；`maxTokensContinue` max-tokens 也续；`fallbacks` 兜底链（provider+model 列表，按优先级排序）；`useAllConfiguredModels` 轮换池是否自动纳入 profile 里全部已配置中转×模型（默认 true：fallbacks 作优先前缀，llm 服务枚举出的其余模型去重追加到链尾，新加中转/模型免配置自动进轮换）；`excludeProviders` 不进轮换池的中转列表（默认 `[deepseek-official]`，官方直连 key 失效不会自愈；AUTH 类失败还会把整个中转拉黑一个冷却周期）。
 
 ## 会话内指令
 

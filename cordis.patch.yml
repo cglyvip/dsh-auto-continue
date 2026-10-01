@@ -14,6 +14,8 @@
         continueDelayMs: 1500
         autoSwitchModel: true
         useAllConfiguredModels: true
+        excludeProviders:
+          - deepseek-official
         # 同一模型连续重试次数，额度用完才切下一个兜底（0 = 失败立刻切换）
         retriesPerModel: 1
         # 熔断开关（默认关闭）：不同模型连续报同一错误达到该次数才停止本轮。
