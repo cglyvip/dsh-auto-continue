@@ -33,7 +33,8 @@ function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash
 			return () => listeners.delete(event);
 		},
 		get(name) {
-			if (name === "agents") return { selectForNextRequest(a, sel) { calls.selections.push(sel); } };
+			if (name === "agents") return { /* 真实 dsh 里这是底层注册表，没有 selectForNextRequest */ };
+			if (name === "sessionController") return { agents: { selectForNextRequest(a, sel) { calls.selections.push(sel); } } };
 			if (name === "agentDefaultModel") return { saveSelection: async (sel) => { calls.defaultModelSaves.push(sel); } };
 			if (name === "llm") return { resolveCallConfig: async (r) => ({ provider: r.provider, model: r.model }), ...(llm || {}) };
 			if (name === "commands") return { register() { return () => {}; } };

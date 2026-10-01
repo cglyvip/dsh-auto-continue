@@ -1,6 +1,6 @@
 {
   "name": "dsh-auto-continue",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "DeepSeek Harness 插件：模型请求失败导致本轮停止时，先在原模型重试数次，再沿兜底链循环切换并注入「继续」，免手动干预。",
   "type": "module",
   "main": "lib/index.js",
