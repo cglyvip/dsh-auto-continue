@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-10-01 · 插件版本 v0.3.1 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
+> 最后更新：2026-10-01 · 插件版本 v0.3.7 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
 
 ---
 
@@ -88,7 +88,7 @@ dsh-auto-continue/
 - `slot.continueUsed >= cfg.continueMax`（默认 8，1-20）：每会话继续预算，用完即停
 - `modelFails` 冷却表：失败的模型 10 分钟（`modelCooldownMs`）内不再选，**跨会话共享**（一个模型挂了大概率都挂）
 
-**配置键**（cordis.patch.yml，均可省略用默认）：`enabled` / `autoContinue` / `continueText`(默认"继续") / `continueMax`(100，1-500，重试与切换的继续都计入，按 1~1.5 分钟间隔约 2 小时) / `continueDelayMs`(1500，仅在随机退避被禁用时生效) / `retriesPerModel`(3，同一模型失败后先重试的次数，0=失败立刻切换) / `identicalFailuresLimit`(0=关闭，不同模型连续同错的熔断阈值) / `retryBackoffMinMs`(10000) / `retryBackoffMaxMs`(15000，失败重试的实际等待在 [min,max] 均匀随机——开发阶段 10~15 秒，上线可改回 60000/90000；都为 0 时退回 continueDelayMs) / `modelCooldownMs`(18000000，失败模型冷却 5 小时，冷却期内每次切换都跳过，持久化在 model-fails.json) / `autoSwitchModel`(true) / `modelCooldownMs`(600000) / `maxTokensContinue`(true) / `verbose`(false，开详细日志) / `fallbacks`（默认 fengwind 的 6 个模型，不含 glm-5.3-flash；**换机器/换中转必须改成本中转真实存在的模型**）。
+**配置键**（cordis.patch.yml，均可省略用默认）：`enabled` / `autoContinue` / `continueText`(默认"继续") / `continueMax`(100，1-500，重试与切换的继续都计入，按 1~1.5 分钟间隔约 2 小时) / `continueDelayMs`(1500，仅在随机退避被禁用时生效) / `retriesPerModel`(3，同一模型失败后先重试的次数，0=失败立刻切换) / `identicalFailuresLimit`(0=关闭，不同模型连续同错的熔断阈值) / `retryBackoffMinMs`(10000) / `retryBackoffMaxMs`(15000，失败重试的实际等待在 [min,max] 均匀随机——开发阶段 10~15 秒，上线可改回 60000/90000；都为 0 时退回 continueDelayMs) / `modelCooldownMs`(18000000，失败模型冷却 5 小时，冷却期内每次切换都跳过，持久化在 model-fails.json) / `useAllConfiguredModels`(true，轮换池=fallbacks 优先前缀+全部已配置中转×模型动态枚举) / `excludeProviders`(["deepseek-official"]) / `providerFailStreak`(3，同一中转连败 N 次整体拉黑，0=关) / `autoSwitchModel`(true) / `modelCooldownMs`(600000) / `maxTokensContinue`(true) / `verbose`(false，开详细日志) / `fallbacks`（默认 fengwind 的 6 个模型，不含 glm-5.3-flash；**换机器/换中转必须改成本中转真实存在的模型**）。
 
 ## 4. dsh 内部 API 速查（逆向自 app.asar 0.2.0-rc.2，改动风险自担）
 
@@ -164,6 +164,7 @@ v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna�
 ```
 
 - 所有间隔落在 61~87 秒（1~1.5 分钟随机区间 ✓）；熔断关闭后循环不停 ✓；预算计数正常 ✓。
+- ⚠️ **本节结论后经 v0.3.6 修正**：当时日志里的"切换"（plan: switch / switched to X）是插件轮换状态的自我引用，`selectForNextRequest` 因走错服务（ctx.get("agents") 无此方法 + 可选链静默吞掉）从未生效——真实请求始终打在起点模型上。铁证：request-error 的 payload.provider 两天里始终是 api029，即使轮换链已排到 freeapi/elysiver 的模型。教训：**验证切换必须看 payload.provider 是否变化，不能信插件自己的日志**。
 - 当时 key 整体故障期：连 MiniMax-M3 都报 model_unavailable，插件按要求持续循环不停手——『换到能用为止』的行为定稿依据。
 - **界面渲染确认**：`kind:"user"` 的注入消息以普通用户气泡显示（作者原话『看到了，是我发出的文字』），模型名提示完全可见；`plugin:<包名>` 形态的旧结论（能落盘但界面不渲染）保持有效。
 
@@ -183,6 +184,12 @@ v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna�
 | v0.2.7 | 提示文案带模型名（失败的是谁、切到谁，一眼可见） |
 | v0.3.0 | 失败模型 5 小时冷却全程生效 + 磁盘持久化（model-fails.json，重启不丢）；退避改 10~15 秒（开发期） |
 | v0.3.1 | 切换时同步 agentDefaultModel.saveSelection——右下角模型选择器跟随自动更新 |
+| v0.3.2 | 每模型重试 1 次即切换（5 小时黑名单不变） |
+| v0.3.3 | 轮换池动态化：fallbacks 作优先前缀 + 运行时枚举全部已配置中转×模型（新加中转免配置） |
+| v0.3.4 | excludeProviders 默认排除官方源；AUTH 类失败拉黑整个中转一个冷却周期 |
+| v0.3.5 | 轮换池按中转交错排序；同一中转连败 3 次（providerFailStreak）整体拉黑——账户级故障快速逃逸 |
+| v0.3.6 | **切换失效根因修复**：selectForNextRequest 在 sessionController.agents 上，ctx.get("agents") 无此方法导致可选链静默空转两天；不可用时响亮报错 |
+| v0.3.7 | sessionController 显式 inject（插件加载早于服务启动时 ctx.get 拿到 undefined） |
 
 ## 7.7 「从来没成功过」的最终诊断（2026-10-01 早晨）
 
