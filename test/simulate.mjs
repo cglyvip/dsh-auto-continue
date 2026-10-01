@@ -103,7 +103,7 @@ async function markFailed(h, model, provider = "fengwind") {
 
 // --- 场景3: 链尾绕回起点，循环往复
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, providerFailStreak: 0, fallbacks: [
 		{ provider: "fengwind", model: "deepseek-v4.1-flash" },
 		{ provider: "fengwind", model: "kimi-k3" },
 	] } });
@@ -116,7 +116,7 @@ async function markFailed(h, model, provider = "fengwind") {
 
 // --- 场景4: 所有兜底都在冷却 → 首切忽略冷却，仍切到第一个兜底开始循环
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, providerFailStreak: 0, fallbacks: [
 		{ provider: "fengwind", model: "deepseek-v4.1-flash" },
 		{ provider: "fengwind", model: "kimi-k3" },
 	] } });
@@ -130,7 +130,7 @@ async function markFailed(h, model, provider = "fengwind") {
 
 // --- 场景5: 冷却中的兜底被跳过，选下一个健康的
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, providerFailStreak: 0, fallbacks: [
 		{ provider: "fengwind", model: "deepseek-v4.1-flash" },
 		{ provider: "fengwind", model: "kimi-k3" },
 	] } });
@@ -143,7 +143,7 @@ async function markFailed(h, model, provider = "fengwind") {
 
 // --- 场景6: 中途手动换模型 → 以新模型为起点重开循环
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retriesPerModel: 1, providerFailStreak: 0, fallbacks: [
 		{ provider: "fengwind", model: "deepseek-v4.1-flash" },
 		{ provider: "fengwind", model: "kimi-k3" },
 	] } });
@@ -296,10 +296,13 @@ async function markFailed(h, model, provider = "fengwind") {
 	h.dispose();
 }
 
-// --- 场景16: 全模型轮换池——llm 目录里的所有中转×模型都进轮换，不只 fallbacks 那几个
+// --- 场景16: 全模型轮换池——按中转交错排序：同源下一顺位在冷却时，直接跳到另一家中转
 {
 	const h = makeHarness({
-		cfg: { continueDelayMs: 30, fallbacks: [{ provider: "fengwind", model: "mimo-v2.6-flash" }] },
+		cfg: { continueDelayMs: 30, retriesPerModel: 1, providerFailStreak: 0, fallbacks: [
+			{ provider: "fengwind", model: "mimo-v2.6-flash" },
+			{ provider: "fengwind", model: "deepseek-v4.1-flash" },
+		] },
 		llm: {
 			listProviders: () => [{ id: "fengwind" }, { id: "qq214" }],
 			listModels: async (pid) => pid === "fengwind"
@@ -307,11 +310,14 @@ async function markFailed(h, model, provider = "fengwind") {
 				: [{ id: "GLM-5.3-Flash" }],
 		},
 	});
-	for (let n = 1; n <= 7; n += 1) await failRound(h, n);
+	await markFailed(h, "mimo-v2.6-flash"); // mimo 先进入冷却
+	for (let n = 1; n <= 2; n += 1) await failRound(h, n); // glm 失败：重试 1 次 → 切换到 qq214/GLM
+	for (let n = 3; n <= 4; n += 1) await failRound(h, n, "GLM-5.3-Flash", "qq214", "SERVER"); // GLM 重试后失败 → 轮换到 deepseek
 	await sleep(150);
 	const models = h.calls.selections.map((s) => `${s.provider}/${s.model}`);
-	check("轮换池覆盖另一中转的模型", models.includes("qq214/GLM-5.3-Flash"));
-	check("池序：fallbacks 优先，其余按枚举顺序追加", JSON.stringify(models.slice(0, 3)) === JSON.stringify(["fengwind/mimo-v2.6-flash", "fengwind/deepseek-v4.1-flash", "qq214/GLM-5.3-Flash"]));
+	// 链 = [glm, mimo(冷却), qq214/GLM, fengwind/deepseek]——交错让 qq214 排在 deepseek 之前
+	check("池序按中转交错：跳过冷却的同源模型后先到另一家中转", models[0] === "qq214/GLM-5.3-Flash");
+	check("轮换池覆盖另一中转的模型且同源模型仍在池中", models.includes("fengwind/deepseek-v4.1-flash"));
 	h.dispose();
 }
 
@@ -368,6 +374,21 @@ async function markFailed(h, model, provider = "fengwind") {
 	const models = h.calls.selections.map((s) => `${s.provider}/${s.model}`);
 	check("AUTH 拉黑后不再选该中转的任何模型", h.calls.selections.every((s) => s.provider !== "badkey"));
 	check("轮换继续在健康中转上进行", models.includes("fengwind/deepseek-v4.1-flash"));
+	h.dispose();
+}
+
+// --- 场景20: 同一中转连败 3 次 → 整体拉黑（model-fails.json 出现 provider/* 键）
+{
+	const h = makeHarness({
+		cfg: { continueDelayMs: 30, useAllConfiguredModels: false, fallbacks: [
+			{ provider: "fengwind", model: "mimo-v2.6-flash" },
+			{ provider: "fengwind", model: "deepseek-v4.1-flash" },
+		] },
+	});
+	for (let n = 1; n <= 3; n += 1) await failRound(h, n, "mimo-v2.6-flash", "fengwind", "SERVER", "Gateway attempt budget is exhausted");
+	await sleep(100);
+	const fails = JSON.parse(fs.readFileSync(path.join(process.env.DSH_HOME, "auto-continue", "model-fails.json"), "utf8"));
+	check("连败 3 次触发中转级拉黑", Boolean(fails["fengwind/*"]));
 	h.dispose();
 }
 
