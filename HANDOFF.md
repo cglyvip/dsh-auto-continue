@@ -123,6 +123,11 @@ dsh-auto-continue/
    - **手动**：编辑 `~/.dsh/profiles/desktop/package.json`，dependencies 加 `"dsh-auto-continue": "github:cglyvip/dsh-auto-continue"`，`dsh.profile.bundles` 数组加 `"dsh-auto-continue"`，然后 `cd ~/.dsh/profiles/desktop && pnpm install`（dsh 自带 pnpm，Windows 下：`node ~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.cjs install`）。
 5. 重启 dsh，看 `~/.dsh/auto-continue/activity.log` 出现 `vX.Y.Z loaded`（且 fallbacks 是本机中转的真实模型），会话里 `/autocont` 有输出即成。
 6. 兜底链默认是 fengwind 中转的模型清单。**换中转/换机器时改 `fallbacks`**：在 profile 的 `cordis.patch.yml` 里加同 id 覆盖条目（示例见 README），别直接改仓库里的默认值。**链里的模型必须本 key 真实可用**——实测 key 上未开通的模型统一报 503『当前模型暂不可用』，循环会在它们身上白烧重试额度。判别办法：看日志里哪些模型报过非 model_unavailable 的错误（说明到达过模型）。
+6.5. **没有装 Git 的机器**：`github:` 依赖需要 pnpm 调 `git ls-remote` 解析——没 Git 会在 dsh 启动装配时报 `'git' 不是内部或外部命令`。两种解决：
+   - 装 Git（git-scm.com，装完重启 dsh 即可）；
+   - 或把 profile 的 package.json 里依赖改成**版本标签 tarball 地址**（纯 HTTPS，无需 Git）：
+     `"dsh-auto-continue": "https://github.com/cglyvip/dsh-auto-continue/archive/refs/tags/v0.5.2.tar.gz"`
+     （每次发新版要更新标签与该地址；标签 tarball 无 GitHub 分支缓存问题）。
 7. **已装机机器的插件更新命令**（Windows，用 dsh 自带 pnpm；github 依赖锁着 commit，要 update 才会重解析）：
    ```
    cd ~/.dsh/profiles/desktop

@@ -53,7 +53,7 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
 
 ## 安装 / 卸载
 
-**插件管理器安装**：在 dsh 插件管理界面输入 `github:cglyvip/dsh-auto-continue`（或仓库地址）安装即可。前提：包必须声明 `dsh.bundle.patch`（本仓库已声明），否则管理器报"这个包没有声明组合包，不能作为插件管理"。
+**插件管理器安装**：在 dsh 插件管理界面输入 `github:cglyvip/dsh-auto-continue`（或仓库地址）安装即可。**机器没装 Git 的话**改用版本标签 tarball 地址（纯 HTTPS 无需 Git）：`https://github.com/cglyvip/dsh-auto-continue/archive/refs/tags/v0.5.2.tar.gz`。前提：包必须声明 `dsh.bundle.patch`（本仓库已声明），否则管理器报"这个包没有声明组合包，不能作为插件管理"。
 
 **手动安装**（desktop profile）：在 `~/.dsh/profiles/desktop/package.json` 的 `dependencies` 加 `"dsh-auto-continue": "github:cglyvip/dsh-auto-continue"`、`dsh.profile.bundles` 数组加 `"dsh-auto-continue"`，然后在 profile 目录 `pnpm install`，重启 dsh。默认配置由随包 `cordis.patch.yml` 自动注入，无需改 profile 的 patch 文件。
 
