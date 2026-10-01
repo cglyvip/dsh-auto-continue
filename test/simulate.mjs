@@ -188,7 +188,7 @@ async function markFailed(h, model, provider = "fengwind") {
 
 // --- 场景9: 预算上限生效（含重试消耗）
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, continueMax: 2 } });
+	const h = makeHarness({ cfg: { continueDelayMs: 30, continueMax: 2, retriesPerModel: 3 } });
 	for (let n = 1; n <= 4; n += 1) await failRound(h, n);
 	check("预算上限 2 次生效", h.calls.followups.length === 2 && h.calls.selections.length === 0);
 	h.dispose();
@@ -283,7 +283,7 @@ async function markFailed(h, model, provider = "fengwind") {
 
 // --- 场景15: 429 限流不再单独停止，照常走"重试 3 遍 → 切换"的循环
 {
-	const h = makeHarness({ cfg: { continueDelayMs: 30, retryBackoffMinMs: 40, retryBackoffMaxMs: 80, fallbacks: [
+	const h = makeHarness({ cfg: { continueDelayMs: 30, retryBackoffMinMs: 40, retryBackoffMaxMs: 80, retriesPerModel: 3, fallbacks: [
 		{ provider: "api029", model: "deepseek-v4.1-flash" },
 		{ provider: "api029", model: "kimi-k3" },
 	] } });
