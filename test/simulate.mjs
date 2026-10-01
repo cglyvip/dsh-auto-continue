@@ -13,7 +13,7 @@ process.env.DSH_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-auto-continue-
 
 const mod = await import(pathToFileURL(fileURLToPath(new URL("../lib/index.js", import.meta.url))).href);
 
-function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash" }, cfg }) {
+function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash" }, cfg, llm }) {
 	const listeners = new Map();
 	const calls = { selections: [], followups: [], errors: [], defaultModelSaves: [] };
 	const agent = {
@@ -35,7 +35,7 @@ function makeHarness({ selection = { provider: "fengwind", model: "glm-5.3-flash
 		get(name) {
 			if (name === "agents") return { selectForNextRequest(a, sel) { calls.selections.push(sel); } };
 			if (name === "agentDefaultModel") return { saveSelection: async (sel) => { calls.defaultModelSaves.push(sel); } };
-			if (name === "llm") return { resolveCallConfig: async (r) => ({ provider: r.provider, model: r.model }) };
+			if (name === "llm") return { resolveCallConfig: async (r) => ({ provider: r.provider, model: r.model }), ...(llm || {}) };
 			if (name === "commands") return { register() { return () => {}; } };
 			return undefined;
 		},
@@ -293,6 +293,42 @@ async function markFailed(h, model, provider = "fengwind") {
 	await sleep(200);
 	check("429 照常重试 3 遍后切换", h.calls.followups.length === 5 && JSON.stringify(h.calls.selections.map((s) => s.model)) === JSON.stringify(["deepseek-v4.1-flash"]));
 	check("限流轮的消息正文带提示", h.calls.followups[0]?.content?.[0]?.text?.includes("限流") === true);
+	h.dispose();
+}
+
+// --- 场景16: 全模型轮换池——llm 目录里的所有中转×模型都进轮换，不只 fallbacks 那几个
+{
+	const h = makeHarness({
+		cfg: { continueDelayMs: 30, fallbacks: [{ provider: "fengwind", model: "mimo-v2.6-flash" }] },
+		llm: {
+			listProviders: () => [{ id: "fengwind" }, { id: "qq214" }],
+			listModels: async (pid) => pid === "fengwind"
+				? [{ id: "mimo-v2.6-flash" }, { id: "deepseek-v4.1-flash" }]
+				: [{ id: "GLM-5.3-Flash" }],
+		},
+	});
+	for (let n = 1; n <= 7; n += 1) await failRound(h, n);
+	await sleep(150);
+	const models = h.calls.selections.map((s) => `${s.provider}/${s.model}`);
+	check("轮换池覆盖另一中转的模型", models.includes("qq214/GLM-5.3-Flash"));
+	check("池序：fallbacks 优先，其余按枚举顺序追加", JSON.stringify(models.slice(0, 3)) === JSON.stringify(["fengwind/mimo-v2.6-flash", "fengwind/deepseek-v4.1-flash", "qq214/GLM-5.3-Flash"]));
+	h.dispose();
+}
+
+// --- 场景17: useAllConfiguredModels: false 时只用 fallbacks，不碰动态枚举的模型
+{
+	const h = makeHarness({
+		cfg: { continueDelayMs: 30, useAllConfiguredModels: false, fallbacks: [{ provider: "fengwind", model: "mimo-v2.6-flash" }] },
+		llm: {
+			listProviders: () => [{ id: "fengwind" }, { id: "qq214" }],
+			listModels: async (pid) => pid === "fengwind"
+				? [{ id: "mimo-v2.6-flash" }, { id: "deepseek-v4.1-flash" }]
+				: [{ id: "GLM-5.3-Flash" }],
+		},
+	});
+	for (let n = 1; n <= 4; n += 1) await failRound(h, n);
+	await sleep(150);
+	check("关闭全模型轮换时不越出 fallbacks", h.calls.selections.every((s) => s.provider === "fengwind"));
 	h.dispose();
 }
 
