@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-10-01 · 插件版本 v0.3.7 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
+> 最后更新：2026-10-01 · 插件版本 v0.4.0 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
 
 ---
 
@@ -105,6 +105,7 @@ dsh-auto-continue/
 | 持久化准入（dsh-session-persistence-jsonl worker） | 写入前校验每条消息：source 必须是对象、kind 非空且 ≠ `"plugin"`；不合规的行**不会落盘**（会话文件不损坏），但轮次以 UNKNOWN 失败。其他运行时包对 source.kind 没有白名单校验 |
 | LLM 适配层（`@earendil-works/pi-ai` + `dsh-llm-pi-ai`） | 请求参数由 pi-ai 按模型 `compat` 开关拼装（如 openai-completions 的 `compat.supportsStore` 为真才发 `store:false`）。**中转网关拒收某参数（如 400 "property 'store' is unsupported"）时不用改插件**：profile 的 llm-pi-ai provider 条目支持 `compat: { supportsStore: false }`（route 级，对整条路由生效；`dsh-llm-pi-ai` 的 COMPAT_GATES 表定义了哪些字段可配，openai-completions 对 supportsStore 是 "offer"）。改完重启 dsh |
 | 失败轮的模型归属 | `request-error` 时 `requestHeader` 可能不刷新（一直报上一次成功的模型）。插件用轮换状态 rot 的当前位置做冷却归属与熔断统计，header 原始值留给"用户手动换模型"检测（`syncRotation`）。 |
+| 标题栏开关（v0.4.0） | 界面开关 = 两半：**node 侧**本地控制端点（`http.createServer` 绑 127.0.0.1，`uiPort` 默认 49765，仅 GET /status 与 POST /toggle，带 CORS 头，端口被占则跳过）；**client 侧** `lib/client.js`（package.json `dsh.client: ["./lib/client.js"]` 声明，宿主经 `window.__ModuleLoader__.load({id, factory})` 注入浏览器），`inject:["slots"]` + `ctx.slots.inject("conversation.session.header.actions", ...)` 注册 React 按钮，fetch 本地端点读写状态。参考实现：dsh-client-ui-jobs 的 header action 与 dsh-cordis-client-runner 的槽位自述文档 |
 | 右下角模型选择器联动 | 选择器绑定 `agentDefaultModel` 服务（默认模型，对应 profile 的 `agent-default-model` 条目）。界面手动换模型走的远程命令 `sessionController.selectModel` = `agents.selectForNextRequest` + `ctx.agentDefaultModel.saveSelection(selected)` 两步（逆向自 dsh-api-session-controller lib/index.js:720）。**v0.3.1 实测**：插件两步都做后，持久层即时更新（profile 条目 06:57 被改写为实际切换的模型 ✓），但**已打开会话的选择器不会实时重绘**——界面组件自己持有快照，只在重新挂载时读取（web-frontend 两个 bundle 里无 selectModel/agentDefaultModel 字面量，无可订阅的刷新钩子）。会话切换/重开/重启后选择器即显示真实模型。要选中途实时刷新需走 client.js 注入 renderer 的路子（未实现） |
 | `ctx.get("commands").register({name, description, input:{hint}, handler})` | 注册斜杠指令；handler 返回 `{kind:"success", text}` |
 | 插件管理器判定 | `bundleManifest()` 只认 package.json 的 `dsh.bundle.patch`；管理器 install/reconcile 会把**没有**该声明的依赖从 bundles 数组剔除 |
@@ -190,6 +191,7 @@ v0.2.7 全流程实测，日志为证（session-dc090d5e，起点 gpt-5.6-luna�
 | v0.3.5 | 轮换池按中转交错排序；同一中转连败 3 次（providerFailStreak）整体拉黑——账户级故障快速逃逸 |
 | v0.3.6 | **切换失效根因修复**：selectForNextRequest 在 sessionController.agents 上，ctx.get("agents") 无此方法导致可选链静默空转两天；不可用时响亮报错 |
 | v0.3.7 | sessionController 显式 inject（插件加载早于服务启动时 ctx.get 拿到 undefined） |
+| v0.4.0 | 会话标题栏「自动重试」开关：client.js（slots 注入 header 按钮）+ node 本地控制端点（127.0.0.1:uiPort） |
 
 ## 7.7 「从来没成功过」的最终诊断（2026-10-01 早晨）
 

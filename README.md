@@ -33,6 +33,10 @@ DeepSeek Harness (dsh) 插件：自定义模型/中转在开发过程中请求�
 
 各字段：`enabled` 总开关；`autoContinue` 自动续跑；`continueText` 注入的文本；`continueMax` 每会话继续次数上限（1-500，默认 100，重试与切换都计入）；`continueDelayMs` 失败后等待毫秒数（仅在随机退避禁用时生效）；`retriesPerModel` 同一模型失败后先重试的次数（0-10，默认 1，0 = 失败立刻切换）；`retryBackoffMinMs`/`retryBackoffMaxMs` 重试随机退避区间毫秒（默认 10000/15000）；`identicalFailuresLimit` 同错熔断阈值（默认 0 关闭）；`autoSwitchModel` 自动换模型；`modelCooldownMs` 失败模型冷却毫秒（默认 18000000 = 5 小时，冷却期内每次切换都跳过并持久化）；`maxTokensContinue` max-tokens 也续；`fallbacks` 兜底链（provider+model 列表，按优先级排序）；`useAllConfiguredModels` 轮换池是否自动纳入 profile 里全部已配置中转×模型（默认 true：fallbacks 作优先前缀，llm 服务枚举出的其余模型去重追加到链尾，新加中转/模型免配置自动进轮换）；`excludeProviders` 不进轮换池的中转列表（默认 `[deepseek-official]`，官方直连 key 失效不会自愈；AUTH 类失败还会把整个中转拉黑一个冷却周期）；`providerFailStreak` 同一中转短时间连败 N 次（默认 3）即整体拉黑一个冷却期——账户级网关故障（整体 5xx/并发超限）不用逐个模型试完；轮换池按中转交错排序（fw→qq214→fw→…），账户级故障第 2 顺位就能切到另一家。
 
+## 界面开关
+
+会话标题栏右侧有「自动重试 开/关」按钮（v0.4.0+，经插件 client.js 注入）：点一下即暂停/恢复自动重试，效果等同 `/autocont off|on`（本次运行内生效，重启恢复配置值）。按钮通过插件在本机 127.0.0.1:49765（`uiPort` 可配）的只读控制端点通信；若按钮显示"不可用"，说明端点未启动（端口被占或 uiPort=0），此时仍可用会话指令。
+
 ## 会话内指令
 
 - `/autocont` — 查看状态（兜底链健康/冷却情况、日志路径）
