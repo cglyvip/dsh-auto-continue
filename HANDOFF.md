@@ -2,7 +2,7 @@
 
 > 写给在任何一台电脑上继续开发本插件的人（包括未来的自己和 AI 助手）。
 > 读完这篇，不需要重新逆向 dsh 就能上手改代码。
-> 最后更新：2026-10-01 · 插件版本 v0.5.2 · 双机实测：完整『重试 3 遍 → 自动切换 → 循环往复』流程已实弹验证
+> 最后更新：2026-10-01 · 插件版本 v0.5.2 · 新机已实测成功闭环（跨中转切换 + 任务完成 + 选择器联动）
 
 ---
 
@@ -17,7 +17,7 @@
 | 双机状态 | 主力机（`C:\Users\Admin`，dsh 0.2.0-rc.2 逆向基线）＋ 新机（`C:\Users\CGLY`，装的是更新的 nightly，含会话格式 v4）。两台都通过 profile 装本插件；新机 2026-10-01 实弹验证了完整循环 |
 | 日志 | `~/.dsh/auto-continue/activity.log`（512KB 自动轮转 .old） |
 | 会话指令 | `/autocont`（status / on / off / reset） |
-| 测试 | `node test/simulate.mjs`（纯 mock，16 场景 22 断言，不需要跑 dsh） |
+| 测试 | `node test/simulate.mjs`（纯 mock，29 断言，不需要跑 dsh） |
 
 ---
 
@@ -51,8 +51,8 @@ dsh 的用户数据根在 `~/.dsh/`（`DSH_HOME` 环境变量可覆盖）：
 dsh-auto-continue/
 ├── package.json        # 含 dsh.bundle.patch 声明（必须保留）
 ├── cordis.patch.yml    # 随包默认配置：insert 一条 id=auto-continue 的配置
-├── lib/index.js        # 插件全部逻辑（单文件，约 610 行）
-├── test/simulate.mjs   # 16 场景 mock 测试
+├── lib/index.js        # 插件全部逻辑（单文件，约 890 行）
+├── test/simulate.mjs   # mock 测试套件（16 场景）
 ├── README.md           # 面向使用者的说明
 ├── HANDOFF.md          # 本文
 ├── LICENSE             # MIT
@@ -117,7 +117,7 @@ dsh-auto-continue/
 
 1. 装 DeepSeek 桌面版（下载渠道同原机）、Git、Node.js（≥20 即可，测试脚本用）。
 2. `git clone https://github.com/cglyvip/dsh-auto-continue`（需要 cglyvip 账号权限的机器直接用 HTTPS + Git Credential Manager 登录）。
-3. 先跑 `node test/simulate.mjs` 确认 16 场景全绿。
+3. 先跑 `node test/simulate.mjs` 确认全绿。
 4. 装进 dsh（二选一）：
    - **插件管理器**（推荐）：dsh 插件管理界面输入 `https://github.com/cglyvip/dsh-auto-continue` 安装。注意：如果之前手动装过同包，先删干净，否则报"无法从依赖变更中确定安装了哪一个包"。
    - **手动**：编辑 `~/.dsh/profiles/desktop/package.json`，dependencies 加 `"dsh-auto-continue": "github:cglyvip/dsh-auto-continue"`，`dsh.profile.bundles` 数组加 `"dsh-auto-continue"`，然后 `cd ~/.dsh/profiles/desktop && pnpm install`（dsh 自带 pnpm，Windows 下：`node ~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.cjs install`）。
