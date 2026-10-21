@@ -156,6 +156,8 @@ dsh-auto-continue/
 - `plan: switch` 日志里的"from 模型"取自 requestHeader，请求失败时 header 不刷新，可能显示旧模型（无害，可改为读 `slot.lastFailure` 前先比对 payload.provider）。
 - 未实现：waterfall 返回 `{kind:"retry"}` 做插件级重试（dsh-purge 有现成写法可抄）；client.js 设置页（`dsh.bundle` 下还有 `client` 声明可挂 UI，参考 dsh-purge 的 client.js 的 `window.__ModuleLoader__.load` 模式）。
 - ⚠️ dsh 桌面版是 **nightly 强制更新**通道（package.json 里有 dshMandatoryUpdatePolicy），升级后本插件如果失灵，先重新逆向确认第 4 节的 API 签名是否变化。
+- **0.2.1-rc.2 兼容性核验（2026-10-21，逐项验证通过，无需改代码）**：agent/request-error、agent/status、turn/end reason 枚举（"interrupted" 字符串已从 agent-loop 消失——无害，插件对未知 kind 本来就不碰）、snapshotEvents（在 agent-loop，不在 dsh-agent）、sessionController.agents.selectForNextRequest、agentDefaultModel.saveSelection、followup、v4 持久化准入（仍拒收 kind:"plugin"）、commands.register、slots 的 conversation.session.header.actions、dsh.client 对象声明契约（parseDshClient）——全部在位。服务名 sessionController/commands/llm/agentDefaultModel 未变。
+- **bundles 静默脱落（2026-10-21 发现）**：10-08 排查报错噪音期间 dsh-auto-continue 从 profile 的 bundles 数组脱落（dependencies 仍在），插件静默停跑 13 天无任何报错——dsh 不会因此报错，唯一症状是日志无 loaded 行。排查口诀：**日志没有 loaded 行 = 没在跑**，先查 bundles 数组再查代码。
 - **v0.2.1 的教训（2026-09-30 实测）**：新机器装了更新的 dsh nightly（内置会话格式 v3→v4 迁移），v0.2.0 注入的 `source.kind:"plugin"` 消息被持久化层当场拒收，每轮以 "format v4 message requires a producer-owned source kind"（UNKNOWN）失败——插件自身轮换逻辑完全正常（日志可见 retry 1/3→2/3→3/3→switch），但注入永不落盘，等于空转预算。排查路径：解包 `app.asar` → `dsh-session-format-v3-to-v4` 与 `dsh-session-persistence-jsonl/lib/worker.cjs` 搜 "producer-owned"。会话文件是多帧 zstd（`session.v4.jsonl.zstd`），Node 流式解压只出第一帧，要按 magic `28b52ffd` 切帧逐帧 `zstdDecompressSync`。
 
 ## 7.5 实弹验证记录（2026-10-01 凌晨，新机 CGLY）
