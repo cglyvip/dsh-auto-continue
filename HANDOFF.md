@@ -126,8 +126,8 @@ dsh-auto-continue/
 6.5. **没有装 Git 的机器**：`github:` 依赖需要 pnpm 调 `git ls-remote` 解析——没 Git 会在 dsh 启动装配时报 `'git' 不是内部或外部命令`。两种解决：
    - 装 Git（git-scm.com，装完重启 dsh 即可）；
    - 或把 profile 的 package.json 里依赖改成**版本标签 tarball 地址**（纯 HTTPS，无需 Git）：
-     `"dsh-auto-continue": "https://github.com/cglyvip/dsh-auto-continue/archive/refs/tags/v0.5.2.tar.gz"`
-     （每次发新版要更新标签与该地址；标签 tarball 无 GitHub 分支缓存问题）。
+     `"dsh-auto-continue": "https://github.com/cglyvip/dsh-auto-continue/archive/refs/tags/<版本标签>.tar.gz"`
+     （每个版本都打标签，Releases 页有发布说明；标签 tarball 无 GitHub 分支缓存问题）。发布流程：测试全绿 → bump 三处版本 → commit + push → `git tag vX.Y.Z && git push origin vX.Y.Z` → `node tools/release.mjs vX.Y.Z "标题" tools/release-body-vX.Y.Z.md`（Release 说明文件也放 tools/）。
 7. **已装机机器的插件更新命令**（Windows，用 dsh 自带 pnpm；github 依赖锁着 commit，要 update 才会重解析）：
    ```
    cd ~/.dsh/profiles/desktop
